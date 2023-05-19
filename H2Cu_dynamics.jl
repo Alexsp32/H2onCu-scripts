@@ -66,7 +66,8 @@ function langevin_dynamics(params::Dict{String,Any})
         dt=get!(params, "timestep", 0.1u"fs"),
         trajectories=get!(params, "trajectories", 1),
         saveat=saveat_arg, # This might slow down calculations, check if actually useful. 
-        output=(OutputDynamicsVariables, OutputPotentialEnergy) # Positions, velocities and 
+        output=(OutputDynamicsVariables, OutputPotentialEnergy), # Positions, velocities and 
+        ensemble_algorithm=get!(params, "ensemble_algorithm", EnsembleSerial())
     )
     # Pack single trajectory into Array to ensure similarity with >1 trajectory
     if params["trajectories"]==1
