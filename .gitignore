@@ -2,3 +2,5 @@
 */*
 !.gitignore
 !H2Cu_dynamics.jl
+!full_simulation.jl
+!init_simulation_dir.jl
