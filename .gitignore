@@ -4,3 +4,5 @@
 !H2Cu_dynamics.jl
 !full_simulation.jl
 !init_simulation_dir.jl
+!prepare_pycall.jl
+!submit_old_schnet_model.sh
