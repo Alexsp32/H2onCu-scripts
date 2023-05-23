@@ -23,21 +23,27 @@ function langevin_dynamics(params::Dict{String,Any})
     # Prepare Python packages
     ase_io=pyimport("ase.io")
     ase=pyimport("ase")
-    spk_utils = pyimport("schnetpack.utils")
-    spk_interfaces = pyimport("schnetpack.interfaces")
     # Load structure
     ase_structure=ase_io.read(params["starting_structure"]) # Assuming ASE will recognise the format.
     # Choose type of ML model (SchNet only for now) and load it
     if params["model_type"]=="schnet"
+        spk_utils = pyimport("schnetpack.utils")
+        spk_interfaces = pyimport("schnetpack.interfaces")
         schnet_model=spk_utils.load_model(params["schnet_model"]*"/best_model";map_location="cpu")
         schnet_args=spk_utils.read_from_json(params["schnet_model"]*"/args.json")
         schnet_environment=spk_utils.script_utils.settings.get_environment_provider(schnet_args,device="cpu")
         schnet_calculator=spk_interfaces.SpkCalculator(schnet_model, energy="energy", forces="forces", environment_provider=schnet_environment)
         ase_structure.set_calculator(schnet_calculator)
         nqcd_model=AdiabaticASEModel(ase_structure) # Use this as the main output of a ML model loading block
+    elseif params["model_type"]=="mace"
+        mace_calc=pyimport("mace.calculators")
+        mace_calculator=mace_calc.MACECalculator(model_path=params["model_path"], device=get!(params, "mace_devicetype", "cpu"))
+        ase_structure.set_calculator(mace_calculator)
+        nqcd_model=AdiabaticASEModel(ase_structure)
     end
     # Initialise NCQD Simulation
     nqcd_atoms,positions,nqcd_cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
+    set_periodicity!(nqcd_cell,[true,true,true])
     simulation=Simulation{Langevin}(
         nqcd_atoms, 
         nqcd_model, 
