@@ -29,6 +29,7 @@ function langevin_dynamics(params::Dict{String,Any})
     if params["model_type"]=="schnet"
         spk_utils = pyimport("schnetpack.utils")
         spk_interfaces = pyimport("schnetpack.interfaces")
+        # ToDo: Find a way of integrating params["model_path"] for SchNet to make params more consistent. 
         schnet_model=spk_utils.load_model(params["schnet_model"]*"/best_model";map_location="cpu")
         schnet_args=spk_utils.read_from_json(params["schnet_model"]*"/args.json")
         schnet_environment=spk_utils.script_utils.settings.get_environment_provider(schnet_args,device="cpu")
@@ -43,7 +44,7 @@ function langevin_dynamics(params::Dict{String,Any})
     end
     # Initialise NCQD Simulation
     nqcd_atoms,positions,nqcd_cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
-    set_periodicity!(nqcd_cell,[true,true,true])
+    set_periodicity!(nqcd_cell,[true,true,true]) #? Is this actually necessary or already set?
     simulation=Simulation{Langevin}(
         nqcd_atoms, 
         nqcd_model, 
