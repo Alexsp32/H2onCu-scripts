@@ -1,11 +1,11 @@
 using DiffEqBase
 using Distributed
 using JLD2
-using NQCDynamics
-using UnitfulAtomic
-using Unitful
 using NQCDLoadbalancer
+using NQCDynamics
 using PyCall
+using Unitful
+using UnitfulAtomic
 
 #! Driver function
 function driver(params)
@@ -49,8 +49,8 @@ function langevin_dynamics(params::Dict{String,Any})
     u=DynamicsVariables(simulation, zeros(size(simulation)), positions)
     # Decide when run_dynamics should save, respecting eq time and saveat
     # set saveat=timestep if unset, force timestep if unset
-    if not haskey(params, "saveat")
-        params["saveat"]=get!(params, "timestep", 0.1"fs")
+    if !haskey(params, "saveat")
+        params["saveat"]=get!(params, "timestep", 0.1u"fs")
     end
     # Assuming no eq time is specified, saveat can be passed as value of params["saveat"]
     if get!(params, "equilibration_time", 0.0)==0.0
