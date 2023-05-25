@@ -24,16 +24,20 @@ pycall_script=/storage/mssgwp_grp/msrkhg/H2onCu/scripts/prepare_pycall.jl
 
 
 # Pre-execution step to load correct python and link to Julia's PyCall
+echo "Slurm job id is: $SLURM_JOB_ID"
 module purge;
 module load GCCcore/10.2.0 Python/3.8.6; # Necessary due to requirements for torch and MACE0.1.0
 echo "Modules loaded, activating virtual environment";
 source /storage/mssgwp_grp/msrkhg/H2onCu/python3.8.6_mace0.1.0/bin/activate
 echo "(1/3) Loading complete, Python executable in scope is:";
 echo | which python;
-echo "(2/3) Rebuilding PyCall to use correct python if necessary:";
+echo "
+(2/3) Rebuilding PyCall to use correct python if necessary:";
 $x $pycall_script
 
-echo "(3/3) Running full_simulation.jl:";
+echo "
+\
+(3/3) Running full_simulation.jl:";
 # Execute job
 $x $f --julia-project $JULIA_PROJECT --slurm
 
