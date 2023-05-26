@@ -16,6 +16,49 @@ function driver(params)
 end
 
 #! Utility functions
+"""
+    set_calculator(ase_structure, params)
+
+    Add calls to new ML model loading functions here. 
+TBW
+"""
+function set_calculator(ase_structure, params)
+    if params["model_type"]=="schnet"
+        load_schnet_model!(ase_structure, params)
+    elseif params["model_type"]=="mace"
+        load_mace_model!(ase_structure, params)
+    end
+end
+
+"""
+    load_schnet_model!(ase_structure, params)
+    
+    SchNet model loader. 
+TBW
+"""
+function load_schnet_model!(ase_structure, params)
+    spk_utils = pyimport("schnetpack.utils")
+    spk_interfaces = pyimport("schnetpack.interfaces")
+    # ToDo: Find a way of integrating params["model_path"] for SchNet to make params more consistent. 
+    schnet_model=spk_utils.load_model(params["schnet_model"]*"/best_model";map_location="cpu")
+    schnet_args=spk_utils.read_from_json(params["schnet_model"]*"/args.json")
+    schnet_environment=spk_utils.script_utils.settings.get_environment_provider(schnet_args,device="cpu")
+    schnet_calculator=spk_interfaces.SpkCalculator(schnet_model, energy="energy", forces="forces", environment_provider=schnet_environment)
+    ase_structure.set_calculator(schnet_calculator)
+end
+
+"""
+    load_mace_model!(ase_structure, params)
+    
+    MACE model loader
+TBW
+"""
+function load_mace_model!(ase_structure, params)
+    mace_calc=pyimport("mace.calculators")
+    mace_calculator=mace_calc.MACECalculator(model_path=params["model_path"], device=get!(params, "mace_devicetype", "cpu"))
+    ase_structure.set_calculator(mace_calculator)
+end
+    
 
 
 #! Dynamics functions
@@ -26,22 +69,8 @@ function langevin_dynamics(params::Dict{String,Any})
     # Load structure
     ase_structure=ase_io.read(params["starting_structure"]) # Assuming ASE will recognise the format.
     # Choose type of ML model (SchNet only for now) and load it
-    if params["model_type"]=="schnet"
-        spk_utils = pyimport("schnetpack.utils")
-        spk_interfaces = pyimport("schnetpack.interfaces")
-        # ToDo: Find a way of integrating params["model_path"] for SchNet to make params more consistent. 
-        schnet_model=spk_utils.load_model(params["schnet_model"]*"/best_model";map_location="cpu")
-        schnet_args=spk_utils.read_from_json(params["schnet_model"]*"/args.json")
-        schnet_environment=spk_utils.script_utils.settings.get_environment_provider(schnet_args,device="cpu")
-        schnet_calculator=spk_interfaces.SpkCalculator(schnet_model, energy="energy", forces="forces", environment_provider=schnet_environment)
-        ase_structure.set_calculator(schnet_calculator)
-        nqcd_model=AdiabaticASEModel(ase_structure) # Use this as the main output of a ML model loading block
-    elseif params["model_type"]=="mace"
-        mace_calc=pyimport("mace.calculators")
-        mace_calculator=mace_calc.MACECalculator(model_path=params["model_path"], device=get!(params, "mace_devicetype", "cpu"))
-        ase_structure.set_calculator(mace_calculator)
-        nqcd_model=AdiabaticASEModel(ase_structure)
-    end
+    set_calculator(ase_structure, params) # Choose the desired ML model type and attach its calculator to ase_structure
+    nqcd_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
     # Initialise NCQD Simulation
     nqcd_atoms,positions,nqcd_cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
     set_periodicity!(nqcd_cell,[true,true,true]) #? Is this actually necessary or already set?
@@ -87,5 +116,45 @@ function langevin_dynamics(params::Dict{String,Any})
     params["ase_object"]=ase_structure
     return (results, params)
 end
+
+function mh_montecarlo(params)
+    # Prepare Python packages
+    ase_io=pyimport("ase.io")
+    ase=pyimport("ase")
+    # Load structure
+    ase_structure=ase_io.read(params["starting_structure"]) # Assuming ASE will recognise the format.
+    # Choose type of ML model (SchNet only for now) and load it
+    set_calculator(ase_structure, params) # Choose the desired ML model type and attach its calculator to ase_structure
+    nqcd_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
+    nqcd_atoms,positions,nqcd_cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
+    set_periodicity!(nqcd_cell,[true,true,true]) #? Is this actually necessary or already set?
+    simulation=Simulation{Classical}(
+        nqcd_atoms, 
+        nqcd_model, 
+        temperature=get!(params, "temperature", 300u"K"),
+        cell=nqcd_cell
+    )
+    #=
+    # ToDo: Find out if I can use a newer method or if model constraints won't allow that.  
+    mc_chain=InitialConditions.ThermalMonteCarlo.run_advancedmh_sampling(
+        simulation,
+        positions,
+        get!(params, "mc_steps", 10000), 
+        get!(params, "mc_stepsize", Dict(:H => 0.6, :Cu => 0.4));
+
+    )
+    =#
+    mc_chain=InitialConditions.MetropolisHastings.run_monte_carlo_sampling(
+        simulation,
+        positions,
+        get!(params, "mc_stepsize", Dict(:H => 0.6, :Cu => 0.4)),
+        get!(params, "mc_steps", 10000);
+        fix=params["mc_fixed"]
+    )
+    params["nqcd_simulation"]=simulation
+    params["ase_object"]=ase_structure
+    return(mc_chain, params)
+end
+
 
     
