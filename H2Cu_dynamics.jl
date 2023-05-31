@@ -2,6 +2,7 @@ using DiffEqBase
 using Distributed
 using JLD2
 using NQCDLoadbalancer
+using LinearAlgebra
 using NQCDynamics
 using PyCall
 using Unitful
@@ -16,6 +17,61 @@ function driver(params)
 end
 
 #! Utility functions
+"""
+    export_trajectory(fname, trj, sim)
+    
+    Exports a single trajectory as the filename given in `fname` from the trajectory `trj` with the simulation parameters `sim`
+TBW
+"""
+function export_trajectory(fname, trj, sim)
+    ase_io=pyimport("ase.io")
+    positions=map(get_positions, trj[:OutputDynamicsVariables])
+    ase_trj=NQCBase.convert_to_ase_atoms(sim.atoms, positions, sim.cell)
+    ase_io.write(fname, ase_trj)
+end
+
+"""
+    distance(config::Matrix, i1, i2)
+    Interatomic distance for a position Matrix. 
+TBW
+"""
+function distance(config::Matrix, i1, i2)
+    return au_to_ang(norm(config[:,i1].-config[:,i2]))
+end
+
+"""
+    distance(config::Any, i1, i2)
+    Interatomic distance for DynamicsVariables. 
+TBW
+"""
+function distance(config::Any, i1, i2)
+    pos=get_positions(config)
+    return au_to_ang(norm(pos[:,i1].-pos[:,i2]))
+end
+
+"""
+    h2_com(config::Any, sim::NQCDynamics.Simulation, i1, i2)
+
+    Returns centre of mass of two atoms based on their masses. 
+TBW
+"""
+function h2_com(config::Any, sim::NQCDynamics.Simulation, i1, i2)
+    mass_ratio=sim.masses[i2]/sim.masses[i1]
+    pos=get_positions(config)
+    return pos[:,i1].+mass_ratio*(pos[:,i2]-pos[:,i1])
+end
+
+"""
+    cu_surface_z(config, indices)
+    
+    Returns the mean z position of the atoms specified. Use with the top layer of Cu atoms in a slab to get a surface z plane. 
+TBW
+"""
+function cu_surface_z(config, indices)
+    pos=get_positions(config)
+    return mean([pos[end,i] for i in indices])
+end
+
 """
     set_calculator(ase_structure, params)
 
