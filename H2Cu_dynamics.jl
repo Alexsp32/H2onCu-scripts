@@ -146,7 +146,7 @@ function langevin_dynamics(params::Dict{String,Any})
     # Let's try freezing atoms (lowest layers of Cu) by setting their sigma=0
     if haskey(params, "fixed_atoms")
         for i in eachindex(params["fixed_atoms"])
-            simulation.method.σ[:,i]=0.0
+            simulation.method.σ[:,i].=0.0
         end
     end
     # Starting conditions: initial positions and zero velocity
