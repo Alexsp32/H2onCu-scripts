@@ -130,11 +130,6 @@ function langevin_dynamics(params::Dict{String,Any})
     # Initialise NCQD Simulation
     nqcd_atoms,positions,nqcd_cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
     set_periodicity!(nqcd_cell,[true,true,true]) #? Is this actually necessary or already set?
-    if haskey(params, "fixed_atoms")
-        extra_args=Dict(:fix => params["fixed_atoms"])
-    else
-        extra_args=Dict()
-    end
     simulation=Simulation{Langevin}(
         nqcd_atoms, 
         nqcd_model; 
@@ -143,11 +138,9 @@ function langevin_dynamics(params::Dict{String,Any})
         cell=nqcd_cell,
         #extra_args...
     )
-    # Let's try freezing atoms (lowest layers of Cu) by setting their sigma=0
+    # Let's try freezing atoms (lowest layers of Cu) by setting their sigma=0 in addition to the 0 forces from the AdiabaticASEModel
     if haskey(params, "fixed_atoms")
-        for i in eachindex(params["fixed_atoms"])
-            simulation.method.σ[:,i].=0.0
-        end
+        simulation.method.σ[CartesianIndices(nqcd_model.DOFs),params["fixed_atoms"]].=0.0
     end
     # Starting conditions: initial positions and zero velocity
     u=DynamicsVariables(simulation, zeros(size(simulation)), positions)
