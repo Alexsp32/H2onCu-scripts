@@ -18,12 +18,15 @@ using LinearAlgebra
 using NNInterfaces
 using NPZ
 using NQCDynamics
+using NQCBase: NQCBase
 using NQCModels
 using Pandas
 using Parameters
 using PyCall
 using Unitful
 using UnitfulAtomic
+using SciMLBase
+using Statistics
 
 #! Driver function
 function driver(params)
