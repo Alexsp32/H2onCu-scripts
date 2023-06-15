@@ -1,16 +1,27 @@
-using DiffEqBase
-# using ACEds: ac_matrixmodel
-# using ACEds.FrictionModels
-# using ACEds.FrictionModels: Gamma
-using Distributed
-using JLD2
+using ACE
+using ACEds.FrictionModels
+using ACEds.FrictionModels: Gamma
+using ACEds: ac_matrixmodel
+using ASE
+using BSplineKit
 using ClusterScripts
 using Combinatorics
+using DataInterpolations
+using DelimitedFiles
+using DiffEqBase
+using Distributed
 using FrictionProviders
+using JLD2
+using JuLIP
+using JuLIP: set_positions!
 using LinearAlgebra
+using NNInterfaces
+using NPZ
 using NQCDynamics
-using PyCall
+using NQCModels
 using Pandas
+using Parameters
+using PyCall
 using Unitful
 using UnitfulAtomic
 
@@ -18,6 +29,8 @@ using UnitfulAtomic
 function driver(params)
     if params["task"]=="langevin"
         results=langevin_dynamics(params)
+    elseif params["task"]=="mdef+2tm"
+        results=mdef_2tm(params)
     end
     return results
 end
@@ -90,11 +103,12 @@ function cu_surface_z(config, indices)
 end
 
 
-mutable struct DesorptionTerminator
+@with_kw mutable struct DesorptionTerminator
     hydrogen_indices
     top_layer_indices
-    max_hydrogen_bond_distance
-    min_desorption_distance
+    max_hydrogen_bond_distance=1.0
+    min_desorption_distance=8.0
+    desorption_trajectories=0
 end
 
 function (desorption_terminator::DesorptionTerminator)(u,t,integrator)::Bool
@@ -105,14 +119,20 @@ function (desorption_terminator::DesorptionTerminator)(u,t,integrator)::Bool
     surface_z=cu_surface_z(u, desorption_terminator.top_layer_indices)
     for molecule in h_molecules
         if h2_com(u, 1.0, h_combinations[molecule]...)-surface_z>=desorption_terminator.min_desorption_distance # Check if H2 COM is far enough away from the surface COM
+            desorption_terminator.desorption_trajectories+=1
             return true
         end
     end
     return false
 end
 
+mutable struct ElectronicTemperatureFunction
+    temperature_profile
+end
+
+
 function create_langevin_distribution(filename::String, trajectory)
-    distribution=DynamicalDistribution(map(x->get_velocities(x), trajectory), map(x->get_positions(x), trajectory))
+    distribution=DynamicalDistribution(map(x->get_velocities(x), trajectory), map(x->get_positions(x), trajectory), size(get_positions(trajectory[1])))
     jldsave(filename; nqcd_distribution=distribution)
 end
 
@@ -125,9 +145,16 @@ end
 TBW
 """
 function set_potential_energy_surface(ase_structure, params)
-    if params["model_type"]=="schnet" || params["pes_type"]=="schnet" #keeping model_type for backward compatibility
+    if haskey(params, "model_type")
+        method=params["model_type"]
+    elseif haskey(params, "pes_type")
+        method=params["pes_type"]
+    else
+        error("No PES method supplied.")
+    end
+    if method=="schnet" #keeping model_type for backward compatibility
         load_schnet_model!(ase_structure, params)
-    elseif params["model_type"]=="mace" || params["pes_type"]=="mace"
+    elseif method=="mace"
         load_mace_model!(ase_structure, params)
     end
 end
@@ -187,7 +214,7 @@ function EFT_ODF_ACE(ase_structure, params)
     eft_aceds_params_path=params["ODF_ACE_params"]
     eft_aceds_cfit_path=params["ODF_ACE_cfit"]
     eft_unit = u"ps^-1"
-    model_params = load_object(model_params_path)        
+    model_params = load_object(eft_aceds_params_path)        
     m_cov = ac_matrixmodel(ACE.EuclideanVector(Float64),model_params["species_friction"],model_params["species_env"];n_rep=model_params["n_rep_cov"], rcut_on = model_params["cutoff"], rcut_off = model_params["cutoff"], maxorder_on=model_params["max_order_on"], maxdeg_on=model_params["max_degree_on"],
             species_maxorder_dict_on = model_params["species_maxorder_dict_on_cov"], 
             species_weight_cat_on = model_params["species_weight_cat_on_cov"],
@@ -201,7 +228,7 @@ function EFT_ODF_ACE(ase_structure, params)
             species_weight_cat_off = model_params["species_weight_cat_off_equ"],
             bond_weight = model_params["bond_weight"])
     # define a model
-    c_fit = load_object(model_cfit_path)
+    c_fit = load_object(eft_aceds_cfit_path)
     eft_model_ace = FrictionModel((m_cov,m_equ))
     ACE.set_params!(eft_model_ace, c_fit)
     # convert ase atoms to julip atoms
@@ -363,16 +390,51 @@ function mdef_2tm(params)
     # Assign the chosen EFT model
     friction_model=set_friction_model(ase_structure, params)
     # Combine models to CompositeFrictionModel
-    nqcd_model=CompositeFrictionModel(pes_model, friction)
+    nqcd_model=CompositeFrictionModel(pes_model, friction_model)
     # Generate temperature profile function
-    
-
+    T_el_profile=readdlm(params["T_el_profile"])
+    T_el_function=interpolate(T_el_profile[:,1], T_el_profile[:,2], BSplineOrder(3))
+    params["T_el_function"]=T_el_function # Give the temperature profile in parameters for nice plotting. 
     # Setup simulation and termination condition. 
     # Initialise NCQD Simulation
     nqcd_atoms,positions,nqcd_cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
     set_periodicity!(nqcd_cell,[true,true,true]) #? Is this actually necessary or already set?
-
+    simulation=Simulation{MDEF}(
+        nqcd_atoms,
+        nqcd_model,
+        cell=nqcd_cell,
+        temperature=T_el_function
+    )
+    desorption_callback=DesorptionTerminator(friction_model.friction_atoms, params["Cu_toplayer_indices"], params["desorption_max_hydrogen_bond_distance"], params["desorption_min_surface_distance"], 0)
+    terminate_callback=DynamicsUtils.TerminatingCallback(desorption_callback)
     # Run desorption simulations
+    if get!(params, "output_type", "last")=="full_trajectory"
+        outputs=(OutputDynamicsVariables, OutputPotentialEnergy, OutputKineticEnergy)
+    elseif params["output_type"]=="last"
+        outputs=OutputFinal
+    end
+    traj=run_dynamics(
+        simulation,
+        (0.0u"fs", get!(params, "runtime", 0.3u"ps")),
+        nqcd_distribution;
+        dt=get!(params, "timestep", 0.1u"fs"),
+        trajectories=get!(params, "trajectories", 1),
+        output=outputs,
+        ensemble_algorithm=get!(params, "ensemble_algorithm", EnsembleSerial()),
+        callback=terminate_callback
+    )
+    # Pack single trajectory into Array to ensure similarity with >1 trajectory
+    if params["trajectories"]==1
+        results=[traj]
+    else
+        results=traj
+    end
+    # Hand over an ase object for the initial structure and a simulation object for further evaluation
+    params["nqcd_simulation"]=simulation
+    params["ase_object"]=ase_structure
+    # Add the number of times the termination callback was true for the number of desorption events. 
+    params["desorption_trajectories"]=desorption_callback.desorption_trajectories
+    return (results, params)
 end
 
 
