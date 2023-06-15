@@ -29,11 +29,11 @@ using SciMLBase
 using Statistics
 
 #! Driver function
-function driver(params)
-    if params["task"]=="langevin"
-        results=langevin_dynamics(params)
-    elseif params["task"]=="mdef+2tm"
-        results=mdef_2tm(params)
+function driver(parameters)
+    if parameters["task"]=="langevin"
+        results=langevin_dynamics(parameters)
+    elseif parameters["task"]=="mdef+2tm"
+        results=mdef_2tm(parameters)
     end
     return results
 end
@@ -142,80 +142,82 @@ end
 #! MLIP interfaces
 
 """
-    set_potential_energy_surface(ase_structure, params)
+    set_potential_energy_surface(ase_structure, parameters)
 
     Add calls to new ML model loading functions here. 
 TBW
 """
-function set_potential_energy_surface(ase_structure, params)
-    if haskey(params, "model_type")
-        method=params["model_type"]
-    elseif haskey(params, "pes_type")
-        method=params["pes_type"]
+function set_potential_energy_surface(ase_structure, parameters)
+    if haskey(parameters, "model_type")
+        method=parameters["model_type"]
+    elseif haskey(parameters, "pes_type")
+        method=parameters["pes_type"]
     else
         error("No PES method supplied.")
     end
     if method=="schnet" #keeping model_type for backward compatibility
-        load_schnet_model!(ase_structure, params)
+        load_schnet_model!(ase_structure, parameters)
     elseif method=="mace"
-        load_mace_model!(ase_structure, params)
+        load_mace_model!(ase_structure, parameters)
     end
 end
 
 """
-    load_schnet_model!(ase_structure, params)
+    load_schnet_model!(ase_structure, parameters)
     
     SchNet model loader. 
 TBW
 """
-function load_schnet_model!(ase_structure, params)
+function load_schnet_model!(ase_structure, parameters)
     spk_utils = pyimport("schnetpack.utils")
     spk_interfaces = pyimport("schnetpack.interfaces")
-    # ToDo: Find a way of integrating params["model_path"] for SchNet to make params more consistent. 
-    schnet_model=spk_utils.load_model(params["schnet_model"]*"/best_model";map_location="cpu")
-    schnet_args=spk_utils.read_from_json(params["schnet_model"]*"/args.json")
+    # ToDo: Find a way of integrating parameters["model_path"] for SchNet to make parameters more consistent. 
+    schnet_model=spk_utils.load_model(parameters["schnet_model"]*"/best_model";map_location="cpu")
+    schnet_args=spk_utils.read_from_json(parameters["schnet_model"]*"/args.json")
     schnet_environment=spk_utils.script_utils.settings.get_environment_provider(schnet_args,device="cpu")
     schnet_calculator=spk_interfaces.SpkCalculator(schnet_model, energy="energy", forces="forces", environment_provider=schnet_environment)
     ase_structure.set_calculator(schnet_calculator)
 end
 
 """
-    load_mace_model!(ase_structure, params)
+    load_mace_model!(ase_structure, parameters)
     
     MACE model loader
 TBW
 """
-function load_mace_model!(ase_structure, params)
+function load_mace_model!(ase_structure, parameters)
     mace_calc=pyimport("mace.calculators")
-    mace_calculator=mace_calc.MACECalculator(model_path=params["model_path"], device=get!(params, "mace_devicetype", "cpu"))
+    mace_calculator=mace_calc.MACECalculator(model_path=parameters["model_path"], device=get!(parameters, "mace_devicetype", "cpu"))
     ase_structure.set_calculator(mace_calculator)
 end
     
-function EFT_LDFA_cube_model(ase_structure, params)
+function EFT_LDFA_cube_model(ase_structure, parameters)
     nqcd_atoms, nqcd_positions, nqcd_cell=NQCBase.convert_from_ase_atoms(ase_structure)
-    density=CubeDensity(params["LDFA_cube_file"], nqcd_cell)
-    return LDFAFriction(density, nqcd_atoms;friction_atoms=params["friction_atoms"])
+    density=CubeDensity(parameters["LDFA_cube_file"], nqcd_cell)
+    return LDFAFriction(density, nqcd_atoms;friction_atoms=parameters["friction_atoms"])
 end
 
-function EFT_LDFA_scikit(ase_structure, params)
+#=
+function EFT_LDFA_scikit(ase_structure, parameters)
     nqcd_atoms, nqcd_positions, nqcd_cell=NQCBase.convert_from_ase_atoms(ase_structure)
     descriptors=pyimport("dscribe.descriptors")
     density=SciKitDensity(
         descriptors.SOAP(
             species=unique(ase_structure.symbols),
             periodic=true,
-            r_cut=get!(params, "EFT_SOAP_rcut", 7.0),
-            n_max=get!(params, "EFT_SOAP_nmax", 7.0),
-            l_max=get!(params, "EFT_SOAP_lmax", 7.0),
+            r_cut=get!(parameters, "EFT_SOAP_rcut", 7.0),
+            n_max=get!(parameters, "EFT_SOAP_nmax", 7.0),
+            l_max=get!(parameters, "EFT_SOAP_lmax", 7.0),
             average="off",
             )
     )
-    return LDFAFriction(density, nqcd_atoms; friction_atoms=params["friction_atoms"])
+    return LDFAFriction(density, nqcd_atoms; friction_atoms=parameters["friction_atoms"])
 end
+=#
 
-function EFT_ODF_ACE(ase_structure, params)
+function EFT_ODF_ACE(ase_structure, parameters)
     eft_unit = u"ps^-1"
-    model_params = load_object(params["ODF_ACE_params"])        
+    model_params = load_object(parameters["ODF_ACE_params"])        
     m_cov = ac_matrixmodel(ACE.EuclideanVector(Float64),model_params["species_friction"],model_params["species_env"];n_rep=model_params["n_rep_cov"], rcut_on = model_params["cutoff"], rcut_off = model_params["cutoff"], maxorder_on=model_params["max_order_on"], maxdeg_on=model_params["max_degree_on"],
             species_maxorder_dict_on = model_params["species_maxorder_dict_on_cov"], 
             species_weight_cat_on = model_params["species_weight_cat_on_cov"],
@@ -229,7 +231,7 @@ function EFT_ODF_ACE(ase_structure, params)
             species_weight_cat_off = model_params["species_weight_cat_off_equ"],
             bond_weight = model_params["bond_weight"])
     # define a model
-    c_fit = load_object(params["ODF_ACE_cfit"])
+    c_fit = load_object(parameters["ODF_ACE_cfit"])
     eft_model_ace = FrictionModel((m_cov,m_equ))
     ACE.set_params!(eft_model_ace, c_fit)
     # convert ase atoms to julip atoms
@@ -237,58 +239,56 @@ function EFT_ODF_ACE(ase_structure, params)
     julip_atoms = JuLIP.Atoms(ase_jl)
     # create an ACEds model object
     eft_model=FrictionProviders.ACEdsODF(eft_model_ace, Gamma, julip_atoms; friction_unit=eft_unit)
-    return eft_model
-    # ODFriction(eft_model; friction_atoms=params["friction_atoms"])
+    return ODFriction(eft_model; friction_atoms=parameters["friction_atoms"])
 end
 
-function EFT_ODF_SchNet(ase_structure, params)
+function EFT_ODF_SchNet(ase_structure, parameters)
     schnet_friction_tensor=pyimport("friction_tensor")
     schnet_environment=pyimport("schnetpack.environment")
     torch=pyimport("torch")
     eft=SchNetODF(
         schnet_friction_tensor.FrictionCalculator(
-            torch.load(params["ODF_SchNet_model_path"], map_location=get!(params, "ODF_SchNet_device", "cpu")),
-            device=params["ODF_SchNet_device"],
-            cutoff=get!(params, "ODF_SchNet_cutoff", 5.0),
+            torch.load(parameters["ODF_SchNet_model_path"], map_location=get!(parameters, "ODF_SchNet_device", "cpu")),
+            device=parameters["ODF_SchNet_device"],
+            cutoff=get!(parameters, "ODF_SchNet_cutoff", 5.0),
             friction_tensor=u"ps^-1",
-            friction_indices=torch.Tensor(params["friction_atoms"].-1), # Need to subtract 1 for python indices. 
-            environment_provider=schnet_environment.AseEnvironmentProvider(params["ODF_SchNet_cutoff"])
+            friction_indices=torch.Tensor(parameters["friction_atoms"].-1), # Need to subtract 1 for python indices. 
+            environment_provider=schnet_environment.AseEnvironmentProvider(parameters["ODF_SchNet_cutoff"])
         ),
         ase_structure; 
         friction_unit=u"ps^-1"
     )
-    return ODFriction(eft; friction_atoms=params["friction_atoms"])
+    return ODFriction(eft; friction_atoms=parameters["friction_atoms"])
 end
 
-function set_friction_model(ase_structure, params)
+function set_friction_model(ase_structure, parameters)
     # If no friction_atoms are specified, assume all hydrogens are meant to experience friction.
-    if haskey(params, "friction_atoms")==false
-        params["friction_atoms"]=findall(x->x=="H", ase_structure.symbols) # These indices are Julian, so from 1
+    if haskey(parameters, "friction_atoms")==false
+        parameters["friction_atoms"]=findall(x->x=="H", ase_structure.symbols) # These indices are Julian, so from 1
     end
     # Decide which model to apply
-    if params["friction_type"]=="ODF_SchNet"
-        return EFT_ODF_SchNet(ase_structure, params)
-    elseif params["friction_type"]=="ODF_ACE"
-        eft=EFT_ODF_ACE(ase_structure, params)
-        return ODFriction(eft; friction_atoms=params["friction_atoms"])
-    elseif params["friction_type"]=="LDFA_scikit"
-        return EFT_LDFA_scikit(ase_structure, params)
-    elseif params["friction_type"]=="LDFA_cube_file"
-        return EFT_LDFA_cube_model(ase_structure, params)
+    if parameters["friction_type"]=="ODF_SchNet"
+        return EFT_ODF_SchNet(ase_structure, parameters)
+    elseif parameters["friction_type"]=="ODF_ACE"
+        return EFT_ODF_ACE(ase_structure, parameters)
+    elseif parameters["friction_type"]=="LDFA_scikit"
+        return EFT_LDFA_scikit(ase_structure, parameters)
+    elseif parameters["friction_type"]=="LDFA_cube_file"
+        return EFT_LDFA_cube_model(ase_structure, parameters)
     end
     error("No friction method was specified")
 end
 
 
 #! Dynamics functions
-function langevin_dynamics(params::Dict{String,Any})
+function langevin_dynamics(parameters::Dict{String,Any})
     # Prepare Python packages
     ase_io=pyimport("ase.io")
     ase=pyimport("ase")
     # Load structure
-    ase_structure=ase_io.read(params["starting_structure"]) # Assuming ASE will recognise the format.
+    ase_structure=ase_io.read(parameters["starting_structure"]) # Assuming ASE will recognise the format.
     # Choose type of ML model (SchNet only for now) and load it
-    set_potential_energy_surface(ase_structure, params) # Choose the desired ML model type and attach its calculator to ase_structure
+    set_potential_energy_surface(ase_structure, parameters) # Choose the desired ML model type and attach its calculator to ase_structure
     nqcd_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
     # Initialise NCQD Simulation
     nqcd_atoms,positions,nqcd_cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
@@ -296,15 +296,15 @@ function langevin_dynamics(params::Dict{String,Any})
     simulation=Simulation{Langevin}(
         nqcd_atoms, 
         nqcd_model; 
-        temperature=get!(params, "temperature", 300u"K"),
-        γ=get!(params, "gamma", 0.5),
+        temperature=get!(parameters, "temperature", 300u"K"),
+        γ=get!(parameters, "gamma", 0.5),
         cell=nqcd_cell,
         #extra_args...
     )
     # Let's try freezing atoms (lowest layers of Cu) by setting their sigma=0 in addition to the 0 forces from the AdiabaticASEModel
-    if haskey(params, "fixed_atoms")
+    if haskey(parameters, "fixed_atoms")
         # Manually set frozen atoms (separate constraint to ase)
-        simulation.method.σ[CartesianIndices(NQCModels.dofs(nqcd_model)),params["fixed_atoms"]].=0.0
+        simulation.method.σ[CartesianIndices(NQCModels.dofs(nqcd_model)),parameters["fixed_atoms"]].=0.0
     else
         # Try to automatically set frozen atoms (copy ase constraint)
         if length(ase_structure.constraints)!=0
@@ -315,53 +315,53 @@ function langevin_dynamics(params::Dict{String,Any})
     u=DynamicsVariables(simulation, zeros(size(simulation)), positions)
     # Decide when run_dynamics should save, respecting eq time and saveat
     # set saveat=timestep if unset, force timestep if unset
-    if !haskey(params, "saveat")
-        params["saveat"]=get!(params, "timestep", 0.1u"fs")
+    if !haskey(parameters, "saveat")
+        parameters["saveat"]=get!(parameters, "timestep", 0.1u"fs")
     end
-    # Assuming no eq time is specified, saveat can be passed as value of params["saveat"]
-    if get!(params, "equilibration_time", 0.0)==0.0
-        saveat_arg=params["saveat"]
+    # Assuming no eq time is specified, saveat can be passed as value of parameters["saveat"]
+    if get!(parameters, "equilibration_time", 0.0)==0.0
+        saveat_arg=parameters["saveat"]
     else
-        saveat_arg=map(austrip, collect(params["equilibration_time"]:params["timestep"]:params["runtime"]))
+        saveat_arg=map(austrip, collect(parameters["equilibration_time"]:parameters["timestep"]:parameters["runtime"]))
     end
     # Now run dynamics
     traj=run_dynamics(
         simulation,
-        (0.0u"fs", get!(params, "runtime", 0.3u"ps")),
+        (0.0u"fs", get!(parameters, "runtime", 0.3u"ps")),
         u;
-        dt=get!(params, "timestep", 0.1u"fs"),
-        trajectories=get!(params, "trajectories", 1),
+        dt=get!(parameters, "timestep", 0.1u"fs"),
+        trajectories=get!(parameters, "trajectories", 1),
         saveat=saveat_arg, # This might slow down calculations, check if actually useful. 
         output=(OutputDynamicsVariables, OutputPotentialEnergy), # Positions, velocities and 
-        ensemble_algorithm=get!(params, "ensemble_algorithm", EnsembleSerial())
+        ensemble_algorithm=get!(parameters, "ensemble_algorithm", EnsembleSerial())
     )
     # Pack single trajectory into Array to ensure similarity with >1 trajectory
-    if params["trajectories"]==1
+    if parameters["trajectories"]==1
         results=[traj]
     else
         results=traj
     end
     # Hand over an ase object for the initial structure and a simulation object for further evaluation
-    params["nqcd_simulation"]=simulation
-    params["ase_object"]=ase_structure
-    return (results, params)
+    parameters["nqcd_simulation"]=simulation
+    parameters["ase_object"]=ase_structure
+    return (results, parameters)
 end
 
-function mh_montecarlo(params)
+function mh_montecarlo(parameters)
     # Prepare Python packages
     ase_io=pyimport("ase.io")
     ase=pyimport("ase")
     # Load structure
-    ase_structure=ase_io.read(params["starting_structure"]) # Assuming ASE will recognise the format.
+    ase_structure=ase_io.read(parameters["starting_structure"]) # Assuming ASE will recognise the format.
     # Choose type of ML model (SchNet only for now) and load it
-    set_potential_energy_surface(ase_structure, params) # Choose the desired ML model type and attach its calculator to ase_structure
+    set_potential_energy_surface(ase_structure, parameters) # Choose the desired ML model type and attach its calculator to ase_structure
     nqcd_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
     nqcd_atoms,positions,nqcd_cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
     set_periodicity!(nqcd_cell,[true,true,true]) #? Is this actually necessary or already set?
     simulation=Simulation{Classical}(
         nqcd_atoms, 
         nqcd_model, 
-        temperature=get!(params, "temperature", 300u"K"),
+        temperature=get!(parameters, "temperature", 300u"K"),
         cell=nqcd_cell
     )
     #=
@@ -369,41 +369,41 @@ function mh_montecarlo(params)
     mc_chain=InitialConditions.ThermalMonteCarlo.run_advancedmh_sampling(
         simulation,
         positions,
-        get!(params, "mc_steps", 10000), 
-        get!(params, "mc_stepsize", Dict(:H => 0.6, :Cu => 0.4));
+        get!(parameters, "mc_steps", 10000), 
+        get!(parameters, "mc_stepsize", Dict(:H => 0.6, :Cu => 0.4));
 
     )
     =#
     mc_chain=InitialConditions.MetropolisHastings.run_monte_carlo_sampling(
         simulation,
         positions,
-        get!(params, "mc_stepsize", Dict(:H => 0.6, :Cu => 0.4)),
-        get!(params, "mc_steps", 10000);
-        fix=params["mc_fixed"]
+        get!(parameters, "mc_stepsize", Dict(:H => 0.6, :Cu => 0.4)),
+        get!(parameters, "mc_steps", 10000);
+        fix=parameters["mc_fixed"]
     )
-    params["nqcd_simulation"]=simulation
-    params["ase_object"]=ase_structure
-    return(mc_chain, params)
+    parameters["nqcd_simulation"]=simulation
+    parameters["ase_object"]=ase_structure
+    return(mc_chain, parameters)
 end
 
-function mdef_2tm(params)
+function mdef_2tm(parameters)
     # Load initial distribution
-    nqcd_distribution=jldopen(params["initial_conditions_file"])["nqcd_distribution"]
+    nqcd_distribution=jldopen(parameters["initial_conditions_file"])["nqcd_distribution"]
     # Create an AdiabaticASEModel for the base slab
     ase_io=pyimport("ase.io")
     ase=pyimport("ase")
-    ase_structure=ase_io.read(params["starting_structure"])
+    ase_structure=ase_io.read(parameters["starting_structure"])
     # Assign the chosen PES model
-    set_potential_energy_surface(ase_structure, params)
+    set_potential_energy_surface(ase_structure, parameters)
     pes_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
     # Assign the chosen EFT model
-    friction_model=set_friction_model(ase_structure, params)
+    friction_model=set_friction_model(ase_structure, parameters)
     # Combine models to CompositeFrictionModel
     nqcd_model=CompositeFrictionModel(pes_model, friction_model)
     # Generate temperature profile function
-    T_el_profile=readdlm(params["T_el_profile"])
+    T_el_profile=readdlm(parameters["T_el_profile"])
     T_el_function=interpolate(T_el_profile[:,1], T_el_profile[:,2], BSplineOrder(3))
-    params["T_el_function"]=T_el_function # Give the temperature profile in parameters for nice plotting. 
+    parameters["T_el_function"]=T_el_function # Give the temperature profile in parameters for nice plotting. 
     # Setup simulation and termination condition. 
     # Initialise NCQD Simulation
     nqcd_atoms,positions,nqcd_cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
@@ -414,36 +414,46 @@ function mdef_2tm(params)
         cell=nqcd_cell,
         temperature=T_el_function
     )
-    desorption_callback=DesorptionTerminator(friction_model.friction_atoms, params["Cu_toplayer_indices"], params["desorption_max_hydrogen_bond_distance"], params["desorption_min_surface_distance"], 0)
+    desorption_callback=DesorptionTerminator(friction_model.friction_atoms, parameters["Cu_toplayer_indices"], parameters["desorption_max_hydrogen_bond_distance"], parameters["desorption_min_surface_distance"], 0)
     terminate_callback=DynamicsUtils.TerminatingCallback(desorption_callback)
     # Run desorption simulations
-    if get!(params, "output_type", "last")=="full_trajectory"
+    if get!(parameters, "output_type", "last")=="full_trajectory"
         outputs=(OutputDynamicsVariables, OutputPotentialEnergy, OutputKineticEnergy)
-    elseif params["output_type"]=="last"
+    elseif parameters["output_type"]=="last"
         outputs=OutputFinal
+    end
+    if !haskey(parameters, "saveat")
+        parameters["saveat"]=get!(parameters, "timestep", 0.1u"fs")
+    end
+    # Assuming no eq time is specified, saveat can be passed as value of parameters["saveat"]
+    if get!(parameters, "equilibration_time", 0.0)==0.0
+        saveat_arg=parameters["saveat"]
+    else
+        saveat_arg=map(austrip, collect(parameters["equilibration_time"]:parameters["timestep"]:parameters["runtime"]))
     end
     traj=run_dynamics(
         simulation,
-        (0.0u"fs", get!(params, "runtime", 0.3u"ps")),
+        (0.0u"fs", get!(parameters, "runtime", 0.3u"ps")),
         nqcd_distribution;
-        dt=get!(params, "timestep", 0.1u"fs"),
-        trajectories=get!(params, "trajectories", 1),
+        dt=get!(parameters, "timestep", 0.1u"fs"),
+        trajectories=get!(parameters, "trajectories", 1),
         output=outputs,
-        ensemble_algorithm=get!(params, "ensemble_algorithm", EnsembleSerial()),
-        callback=terminate_callback
+        ensemble_algorithm=get!(parameters, "ensemble_algorithm", EnsembleSerial()),
+        callback=terminate_callback,
+        saveat=saveat_arg,
     )
     # Pack single trajectory into Array to ensure similarity with >1 trajectory
-    if params["trajectories"]==1
+    if parameters["trajectories"]==1
         results=[traj]
     else
         results=traj
     end
     # Hand over an ase object for the initial structure and a simulation object for further evaluation
-    params["nqcd_simulation"]=simulation
-    params["ase_object"]=ase_structure
+    parameters["nqcd_simulation"]=simulation
+    parameters["ase_object"]=ase_structure
     # Add the number of times the termination callback was true for the number of desorption events. 
-    params["desorption_trajectories"]=desorption_callback.desorption_trajectories
-    return (results, params)
+    parameters["desorption_trajectories"]=desorption_callback.desorption_trajectories
+    return (results, parameters)
 end
 
 
