@@ -402,7 +402,7 @@ function mdef_2tm(parameters)
     nqcd_model=CompositeFrictionModel(pes_model, friction_model)
     # Generate temperature profile function
     T_el_profile=readdlm(parameters["T_el_profile"])
-    T_el_function=interpolate(T_el_profile[:,1], T_el_profile[:,2], BSplineOrder(3))
+    T_el_function(time_ps)=interpolate(T_el_profile[:,1], T_el_profile[:,2], BSplineOrder(3))(ustrip(u"ps", time_ps))*u"K" # Put T_el function in the right format for NQCD
     parameters["T_el_function"]=T_el_function # Give the temperature profile in parameters for nice plotting. 
     # Setup simulation and termination condition. 
     # Initialise NCQD Simulation
