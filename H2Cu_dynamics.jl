@@ -211,10 +211,8 @@ function EFT_LDFA_scikit(ase_structure, params)
 end
 
 function EFT_ODF_ACE(ase_structure, params)
-    eft_aceds_params_path=params["ODF_ACE_params"]
-    eft_aceds_cfit_path=params["ODF_ACE_cfit"]
     eft_unit = u"ps^-1"
-    model_params = load_object(eft_aceds_params_path)        
+    model_params = load_object(params["ODF_ACE_params"])        
     m_cov = ac_matrixmodel(ACE.EuclideanVector(Float64),model_params["species_friction"],model_params["species_env"];n_rep=model_params["n_rep_cov"], rcut_on = model_params["cutoff"], rcut_off = model_params["cutoff"], maxorder_on=model_params["max_order_on"], maxdeg_on=model_params["max_degree_on"],
             species_maxorder_dict_on = model_params["species_maxorder_dict_on_cov"], 
             species_weight_cat_on = model_params["species_weight_cat_on_cov"],
@@ -228,7 +226,7 @@ function EFT_ODF_ACE(ase_structure, params)
             species_weight_cat_off = model_params["species_weight_cat_off_equ"],
             bond_weight = model_params["bond_weight"])
     # define a model
-    c_fit = load_object(eft_aceds_cfit_path)
+    c_fit = load_object(params["ODF_ACE_cfit"])
     eft_model_ace = FrictionModel((m_cov,m_equ))
     ACE.set_params!(eft_model_ace, c_fit)
     # convert ase atoms to julip atoms
@@ -236,7 +234,8 @@ function EFT_ODF_ACE(ase_structure, params)
     julip_atoms = JuLIP.Atoms(ase_jl)
     # create an ACEds model object
     eft_model=FrictionProviders.ACEdsODF(eft_model_ace, Gamma, julip_atoms; friction_unit=eft_unit)
-    return ODFriction(eft_model; friction_atoms=params["friction_atoms"])
+    return eft_model
+    # ODFriction(eft_model; friction_atoms=params["friction_atoms"])
 end
 
 function EFT_ODF_SchNet(ase_structure, params)
@@ -267,7 +266,8 @@ function set_friction_model(ase_structure, params)
     if params["friction_type"]=="ODF_SchNet"
         return EFT_ODF_SchNet(ase_structure, params)
     elseif params["friction_type"]=="ODF_ACE"
-        return EFT_ODF_ACE(ase_structure, params)
+        eft=EFT_ODF_ACE(ase_structure, params)
+        return ODFriction(eft; friction_atoms=params["friction_atoms"])
     elseif params["friction_type"]=="LDFA_scikit"
         return EFT_LDFA_scikit(ase_structure, params)
     elseif params["friction_type"]=="LDFA_cube_file"
