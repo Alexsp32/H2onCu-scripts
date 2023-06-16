@@ -47,7 +47,7 @@ TBW
 """
 function export_trajectory(fname, trj, sim)
     ase_io=pyimport("ase.io")
-    positions=map(get_positions, trj[:OutputDynamicsVariables])
+    positions=map(NQCDynamics.get_positions, trj[:OutputDynamicsVariables])
     ase_trj=NQCBase.convert_to_ase_atoms(sim.atoms, positions, sim.cell)
     ase_io.write(fname, ase_trj)
 end
@@ -67,7 +67,7 @@ end
 TBW
 """
 function distance(config::Any, i1, i2)
-    pos=get_positions(config)
+    pos=NQCDynamics.get_positions(config)
     return au_to_ang(norm(pos[:,i1].-pos[:,i2]))
 end
 
@@ -79,7 +79,7 @@ TBW
 """
 function h2_com(config::Any, sim::NQCDynamics.Simulation, i1, i2)
     mass_ratio=sim.masses[i2]/sim.masses[i1]
-    pos=get_positions(config)
+    pos=NQCDynamics.get_positions(config)
     return pos[:,i1].+mass_ratio*(pos[:,i2]-pos[:,i1])
 end
 
@@ -90,7 +90,7 @@ end
 TBW
 """
 function h2_com(config::Any, mass_ratio::Float64, i1, i2)
-    pos=get_positions(config)
+    pos=NQCDynamics.get_positions(config)
     return pos[:,i1].+mass_ratio*(pos[:,i2]-pos[:,i1])
 end
 
@@ -101,7 +101,7 @@ end
 TBW
 """
 function cu_surface_z(config, indices)
-    pos=get_positions(config)
+    pos=NQCDynamics.get_positions(config)
     return mean([pos[end,i] for i in indices])
 end
 
@@ -135,7 +135,7 @@ end
 
 
 function create_langevin_distribution(filename::String, trajectory)
-    distribution=DynamicalDistribution(map(x->get_velocities(x), trajectory), map(x->get_positions(x), trajectory), size(get_positions(trajectory[1])))
+    distribution=DynamicalDistribution(map(x->get_velocities(x), trajectory), map(x->NQCDynamics.get_positions(x), trajectory), size(NQCDynamics.get_positions(trajectory[1])))
     jldsave(filename; nqcd_distribution=distribution)
 end
 
