@@ -308,7 +308,7 @@ function langevin_dynamics(parameters::Dict{String,Any})
     else
         # Try to automatically set frozen atoms (copy ase constraint)
         if length(ase_structure.constraints)!=0
-            simulation.method.σ[CartesianIndices(NQCModels.dofs(nqcd_model)),CartesianIndices(ase_structure.constraints[1].get_indices())].=0.0
+            simulation.method.σ[CartesianIndices(NQCModels.dofs(nqcd_model)),map(x->CartesianIndex(x), ase_structure.constraints[1].get_indices())].=0.0
         end
     end
     # Starting conditions: initial positions and zero velocity
