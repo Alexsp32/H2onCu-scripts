@@ -308,7 +308,7 @@ function langevin_dynamics(parameters::Dict{String,Any})
     else
         # Try to automatically set frozen atoms (copy ase constraint)
         if length(ase_structure.constraints)!=0
-            simulation.method.σ[CartesianIndices(NQCModels.dofs(nqcd_model)),map(x->CartesianIndex(x), ase_structure.constraints[1].get_indices())].=0.0
+            simulation.method.σ[[CartesianIndex(i...) for i in Iterators.product(NQCModels.dofs(nqcd_model), ase_structure.constraints[1].get_indices().+1)]].=0
         end
     end
     # Starting conditions: initial positions and zero velocity
@@ -396,8 +396,37 @@ function mdef_2tm(parameters)
     # Assign the chosen PES model
     set_potential_energy_surface(ase_structure, parameters)
     pes_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
+    # ! Test: Does using ACE work without the additional function call between simulation and EFT initialisation?
+    #=
     # Assign the chosen EFT model
     friction_model=set_friction_model(ase_structure, parameters)
+    =#
+    eft_unit = u"ps^-1"
+    model_params = load_object(parameters["ODF_ACE_params"])        
+    m_cov = ac_matrixmodel(ACE.EuclideanVector(Float64),model_params["species_friction"],model_params["species_env"];n_rep=model_params["n_rep_cov"], rcut_on = model_params["cutoff"], rcut_off = model_params["cutoff"], maxorder_on=model_params["max_order_on"], maxdeg_on=model_params["max_degree_on"],
+            species_maxorder_dict_on = model_params["species_maxorder_dict_on_cov"], 
+            species_weight_cat_on = model_params["species_weight_cat_on_cov"],
+            species_maxorder_dict_off = model_params["species_maxorder_dict_off_cov"], 
+            species_weight_cat_off = model_params["species_weight_cat_off_cov"],
+            bond_weight = model_params["bond_weight"])
+    m_equ = ac_matrixmodel(ACE.EuclideanMatrix(Float64),model_params["species_friction"],model_params["species_env"];n_rep=model_params["n_rep_equ"], rcut_on = model_params["cutoff"], rcut_off = model_params["cutoff"], maxorder_on=model_params["max_order_on"], maxdeg_on=model_params["max_degree_on"],
+            species_maxorder_dict_on = model_params["species_maxorder_dict_on_equ"], 
+            species_weight_cat_on = model_params["species_weight_cat_on_equ"],
+            species_maxorder_dict_off = model_params["species_maxorder_dict_off_equ"], 
+            species_weight_cat_off = model_params["species_weight_cat_off_equ"],
+            bond_weight = model_params["bond_weight"])
+    # define a model
+    c_fit = load_object(parameters["ODF_ACE_cfit"])
+    eft_model_ace = FrictionModel((m_cov,m_equ))
+    ACE.set_params!(eft_model_ace, c_fit)
+    # convert ase atoms to julip atoms
+    ase_jl = ASE.ASEAtoms(ase_structure)
+    julip_atoms = JuLIP.Atoms(ase_jl)
+    # create an ACEds model object
+    eft_model=FrictionProviders.ACEdsODF(eft_model_ace, Gamma, julip_atoms; friction_unit=eft_unit)
+    friction_model=ODFriction(eft_model; friction_atoms=parameters["friction_atoms"])
+    # ! Test ends
+
     # Combine models to CompositeFrictionModel
     nqcd_model=CompositeFrictionModel(pes_model, friction_model)
     # Generate temperature profile function
