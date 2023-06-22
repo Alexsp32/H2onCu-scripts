@@ -466,12 +466,17 @@ function mdef_2tm(parameters)
     ase_structure=ase_io.read(parameters["starting_structure"])
     # Assign the chosen PES model
     # ToDo: Handle PES models that aren't an ASE calculator.
-    set_potential_energy_surface(ase_structure, parameters)
-    pes_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
+    # Initialise PES model
+    nqcd_model=nothing
+    nqcd_model=set_potential_energy_surface(ase_structure, parameters) # Choose the desired ML model type and attach its calculator to ase_structure
+    if typeof(nqcd_model)==Nothing
+        # In this case, the ML method has modified ase_structure by attaching a calculator to it. 
+        nqcd_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
+    end
     # Assign the chosen EFT model
     friction_model=set_friction_model(ase_structure, parameters)
     # Combine models to CompositeFrictionModel
-    nqcd_model=CompositeFrictionModel(pes_model, friction_model)
+    nqcd_model=CompositeFrictionModel(nqcd_model, friction_model)
     # Generate temperature profile function
     if haskey(parameters, "T_el_profile")
         T_el_profile=readdlm(parameters["T_el_profile"])
