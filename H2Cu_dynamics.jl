@@ -139,6 +139,14 @@ function create_langevin_distribution(filename::String, trajectory)
     jldsave(filename; nqcd_distribution=distribution)
 end
 
+function create_langevin_distribution(filename::String, trajectories, equilibration_time::Vector)
+    total_dynamicsvariables=[]
+    for i in eachindex(equilibration_time)
+        append!(total_dynamicsvariables, trajectories[i][:OutputDynamicsVariables][trajectories[i][:Time].>=ps_to_au(equilibration_time[i])])
+    end
+    create_langevin_distribution(filename, total_dynamicsvariables)
+end
+
 #! MLIP interfaces
 
 """
@@ -159,7 +167,79 @@ function set_potential_energy_surface(ase_structure, parameters)
         load_schnet_model!(ase_structure, parameters)
     elseif method=="mace"
         load_mace_model!(ase_structure, parameters)
+    elseif method=="ace"
+        load_ace_model!(ase_structure, parameters)
+    elseif method=="painn"
+        load_painn_model!(ase_structure, parameters)
+    elseif method=="reann"
+        load_reann_model!(ase_structure, parameters)
     end
+end
+
+"""
+    load_ace_model!(ase_structure, parameters)
+
+    Initialises an ACE PES model. Returns a JuLIPModel to be further used in a simulation. 
+TBW
+"""
+function load_ace_model!(ase_structure, parameters)
+    model_path=haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"]
+    julip_atoms=JuLIP.Atoms(ASE.ASEAtoms(ase_structure)) # Create JuLIP atoms.
+    ace_potential=ACE1.read_dict(load_dict(model_path)["IP"])
+    JuLIP.set_calculator!(julip_atoms, ace_potential)
+    if haskey(parameters, "fixed_atoms")
+        # We have a freeze atoms constraints to apply
+        movement_matrix=Matrix{Float64}(undef, size(ase_structure.get_positions()')...)
+        fill!(movement_matrix, 1.0)
+        movement_matrix[[CartesianIndex(i...) for i in Iterators.product(collect(1:size(ase_structure.get_positions())[end]), collect([parameters["fixed_atoms"]]))]].=0
+        return AdiabaticModels.JuLIPModel(julip_atoms, movement_matrix)
+    elseif length(ase_structure.constraints)!=0
+        # Assume a freeze atoms constraint needs to be copied from ase
+        movement_matrix=Matrix{Float64}(undef, size(ase_structure.get_positions()')...)
+        fill!(movement_matrix, 1.0)
+        movement_matrix[[CartesianIndex(i...) for i in Iterators.product(collect(1:size(ase_structure.get_positions())[end]), ase_structure.constraints[1].get_indices().+1)]].=0
+        return AdiabaticModels.JuLIPModel(julip_atoms, movement_matrix)
+    else
+        return AdiabaticModels.JuLIPModel(julip_atoms)
+    end
+end
+
+"""
+    load_painn_model!(ase_structure, parameters)
+
+    Loads a PaiNN PES model by applying the ase calculator to ase_structure. 
+TBW
+"""
+function load_painn_model!(ase_structure, parameters)
+    torch=pyimport("torch")
+    schnet_interfaces=pyimport("schnetpack.interfaces")
+    schnet_transform=pyimport("schnetpack.transform")
+    model_path=haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"]
+    painn_model=torch.load(model_path, map_location=get!(parameters, "painn_device", "cpu")).to(parameters["painn_device"]) # PaiNN-device sounds like I want to torture someone
+    painn_calculator=schnet_interfaces.SpkCalculator(
+        model=painn_model,
+        converter=schnet_interfaces.AtomsConverter(neighbor_list=schnet_transform.ASENeighborList(cutoff=get!(parameters, "PES_PaiNN_neighbourlist_cutoff", 4.0)), dtype=torch.float32),
+        energy_units="eV",
+        forces_units="ev/Angstrom"
+    )
+    ase_structure.set_calculator(painn_calculator)
+    return nothing
+end
+
+"""
+    load_reann_model!(ase_structure, parameters)
+
+    Loads a REANN ML PES and sets the calculator for the ASE structure specified. 
+    Returns nothing since loading some models requires actually returning something. 
+TBW
+"""
+function load_reann_model!(ase_structure, parameters)
+    reann=pyimport("ase.calculators.reann") # ToDo: I still need to install this!
+    pbc=[1,1,1] # Periodic boundary conditions
+    model_path=haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"]
+    reann_calc=reann.REANN(device="cpu", atomtype=unique(ase_structure.get_chemical_symbols()), period=pbc, nn=model_path)
+    ase_structure.set_calculator(reann_calc)
+    return nothing
 end
 
 """
@@ -177,6 +257,7 @@ function load_schnet_model!(ase_structure, parameters)
     schnet_environment=spk_utils.script_utils.settings.get_environment_provider(schnet_args,device="cpu")
     schnet_calculator=spk_interfaces.SpkCalculator(schnet_model, energy="energy", forces="forces", environment_provider=schnet_environment)
     ase_structure.set_calculator(schnet_calculator)
+    return nothing
 end
 
 """
@@ -189,6 +270,7 @@ function load_mace_model!(ase_structure, parameters)
     mace_calc=pyimport("mace.calculators")
     mace_calculator=mace_calc.MACECalculator(model_path=parameters["model_path"], device=get!(parameters, "mace_devicetype", "cpu"))
     ase_structure.set_calculator(mace_calculator)
+    return nothing
 end
     
 function EFT_LDFA_cube_model(ase_structure, parameters)
@@ -271,9 +353,13 @@ function langevin_dynamics(parameters::Dict{String,Any})
     ase=pyimport("ase")
     # Load structure
     ase_structure=ase_io.read(parameters["starting_structure"]) # Assuming ASE will recognise the format.
-    # Choose type of ML model (SchNet only for now) and load it
-    set_potential_energy_surface(ase_structure, parameters) # Choose the desired ML model type and attach its calculator to ase_structure
-    nqcd_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
+    # Initialise PES model
+    nqcd_model=nothing
+    nqcd_model=set_potential_energy_surface(ase_structure, parameters) # Choose the desired ML model type and attach its calculator to ase_structure
+    if typeof(nqcd_model)==Nothing
+        # In this case, the ML method has modified ase_structure by attaching a calculator to it. 
+        nqcd_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
+    end
     # Initialise NCQD Simulation
     nqcd_atoms,positions,nqcd_cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
     set_periodicity!(nqcd_cell,[true,true,true]) #? Is this actually necessary or already set?
@@ -338,6 +424,7 @@ function mh_montecarlo(parameters)
     # Load structure
     ase_structure=ase_io.read(parameters["starting_structure"]) # Assuming ASE will recognise the format.
     # Choose type of ML model (SchNet only for now) and load it
+    # ToDo: Handle PES models that aren't an ASE calculator
     set_potential_energy_surface(ase_structure, parameters) # Choose the desired ML model type and attach its calculator to ase_structure
     nqcd_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
     nqcd_atoms,positions,nqcd_cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
@@ -378,6 +465,7 @@ function mdef_2tm(parameters)
     ase=pyimport("ase")
     ase_structure=ase_io.read(parameters["starting_structure"])
     # Assign the chosen PES model
+    # ToDo: Handle PES models that aren't an ASE calculator.
     set_potential_energy_surface(ase_structure, parameters)
     pes_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
     # Assign the chosen EFT model
@@ -385,9 +473,11 @@ function mdef_2tm(parameters)
     # Combine models to CompositeFrictionModel
     nqcd_model=CompositeFrictionModel(pes_model, friction_model)
     # Generate temperature profile function
-    T_el_profile=readdlm(parameters["T_el_profile"])
-    T_el_function(time_ps)=interpolate(T_el_profile[:,1], T_el_profile[:,2], BSplineOrder(3))(ustrip(u"ps", time_ps))*u"K" # Put T_el function in the right format for NQCD
-    parameters["T_el_function"]=T_el_function # Give the temperature profile in parameters for nice plotting. 
+    if haskey(parameters, "T_el_profile")
+        T_el_profile=readdlm(parameters["T_el_profile"])
+        T_el_function(time_ps)=interpolate(T_el_profile[:,1], T_el_profile[:,2], BSplineOrder(3))(ustrip(u"ps", time_ps))*u"K" # Put T_el function in the right format for NQCD
+        parameters["T_el_function"]=T_el_function # Give the temperature profile in parameters for nice plotting. 
+    end
     # Setup simulation and termination condition. 
     # Initialise NCQD Simulation
     nqcd_atoms,positions,nqcd_cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
@@ -396,7 +486,7 @@ function mdef_2tm(parameters)
         nqcd_atoms,
         nqcd_model,
         cell=nqcd_cell,
-        temperature=T_el_function
+        temperature=get!(parameters, "temperature", T_el_function)
     )
     desorption_callback=DesorptionTerminator(friction_model.friction_atoms, parameters["Cu_toplayer_indices"], parameters["desorption_max_hydrogen_bond_distance"], parameters["desorption_min_surface_distance"], 0)
     terminate_callback=DynamicsUtils.TerminatingCallback(desorption_callback)
