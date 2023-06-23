@@ -403,7 +403,8 @@ function langevin_dynamics(parameters::Dict{String,Any})
         trajectories=get!(parameters, "trajectories", 1),
         saveat=saveat_arg, # This might slow down calculations, check if actually useful. 
         output=(OutputDynamicsVariables, OutputPotentialEnergy), # Positions, velocities and 
-        ensemble_algorithm=get!(parameters, "ensemble_algorithm", EnsembleSerial())
+        ensemble_algorithm=get!(parameters, "ensemble_algorithm", EnsembleSerial()),
+        callbacks=DynamicsUtils.CellBoundaryCallback()
     )
     # Pack single trajectory into Array to ensure similarity with >1 trajectory
     if parameters["trajectories"]==1
@@ -518,7 +519,7 @@ function mdef_2tm(parameters)
         trajectories=get!(parameters, "trajectories", 1),
         output=outputs,
         ensemble_algorithm=get!(parameters, "ensemble_algorithm", EnsembleSerial()),
-        callback=terminate_callback,
+        callback=CallbackSet(DynamicsUtils.CellBoundaryCallback(),terminate_callback),
         saveat=saveat_arg,
     )
     # Pack single trajectory into Array to ensure similarity with >1 trajectory
