@@ -106,7 +106,7 @@ function cu_surface_z(config, indices)
 end
 
 
-@with_kw mutable struct DesorptionTerminator
+@with_kw mutable struct StrictDesorptionTerminator
     hydrogen_indices
     top_layer_indices
     max_hydrogen_bond_distance=1.0
@@ -114,13 +114,40 @@ end
     desorption_trajectories=0
 end
 
-function (desorption_terminator::DesorptionTerminator)(u,t,integrator)::Bool
+@with_kw mutable struct DesorptionTerminator
+    hydrogen_indices
+    top_layer_indices
+    min_desorption_distance=8.0
+    desorption_trajectories=0
+end
+
+function (desorption_terminator::StrictDesorptionTerminator)(u,t,integrator)::Bool
     # Find possible hydrogen molecules from all unique distance combinations of H atoms. 
     h_combinations=collect(multiset_combinations(desorption_terminator.hydrogen_indices, 2)) # Unique H neighbour list
     distances=[distance(u, combination...) for combination in h_combinations] # Generate all distances
     h_molecules=findall(x->x<=desorption_terminator.max_hydrogen_bond_distance, distances) # Find where the distance is sufficiently small. 
     surface_z=cu_surface_z(u, desorption_terminator.top_layer_indices)
     for molecule in h_molecules
+        if h2_com(u, 1.0, molecule...)[3]-surface_z>=desorption_terminator.min_desorption_distance # Check if H2 COM is far enough away from the surface COM
+            desorption_terminator.desorption_trajectories+=1
+            return true
+        end
+    end
+    return false
+end
+
+"""
+    (desorption_terminator::DesorptionTerminator)(u,t,integrator)::Bool
+
+    DesorptionTerminator checks whether any combination of `hydrogen_indices` has a centre of mass distance larger than `min_desorption_distance` from `cu_surface_z`. 
+    The strict version also enforces a H-H distance maximum (but currently doesn't respect periodicity.)
+TBW
+"""
+function (desorption_terminator::DesorptionTerminator)(u,t,integrator)::Bool
+    # Find possible hydrogen molecules from all unique distance combinations of H atoms. 
+    h_combinations=collect(multiset_combinations(desorption_terminator.hydrogen_indices, 2)) # Unique H neighbour list
+    surface_z=cu_surface_z(u, desorption_terminator.top_layer_indices)
+    for molecule in h_combinations
         if h2_com(u, 1.0, molecule...)[3]-surface_z>=desorption_terminator.min_desorption_distance # Check if H2 COM is far enough away from the surface COM
             desorption_terminator.desorption_trajectories+=1
             return true
@@ -494,7 +521,7 @@ function mdef_2tm(parameters)
         cell=nqcd_cell,
         temperature=get!(parameters, "temperature", T_el_function)
     )
-    desorption_callback=DesorptionTerminator(friction_model.friction_atoms, parameters["Cu_toplayer_indices"], parameters["desorption_max_hydrogen_bond_distance"], parameters["desorption_min_surface_distance"], 0)
+    desorption_callback=DesorptionTerminator(friction_model.friction_atoms, parameters["Cu_toplayer_indices"], parameters["desorption_min_surface_distance"], 0)
     terminate_callback=DynamicsUtils.TerminatingCallback(desorption_callback)
     # Run desorption simulations
     if get!(parameters, "output_type", "last")=="full_trajectory"
