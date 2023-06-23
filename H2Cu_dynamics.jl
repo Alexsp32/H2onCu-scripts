@@ -519,7 +519,7 @@ function mdef_2tm(parameters)
         nqcd_atoms,
         nqcd_model,
         cell=nqcd_cell,
-        temperature=get!(parameters, "temperature", T_el_function)
+        temperature=haskey(parameters, "temperature") ? parameters["temperature"] : T_el_function
     )
     desorption_callback=DesorptionTerminator(friction_model.friction_atoms, parameters["Cu_toplayer_indices"], parameters["desorption_min_surface_distance"], 0)
     terminate_callback=DynamicsUtils.TerminatingCallback(desorption_callback)
