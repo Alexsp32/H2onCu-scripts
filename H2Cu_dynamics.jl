@@ -20,7 +20,7 @@ using NPZ
 using NQCDynamics
 using NQCBase: NQCBase
 using NQCModels
-using Pandas
+using Pandas: read_pickle
 using Parameters
 using PyCall
 using Unitful
@@ -45,9 +45,9 @@ end
     Exports a single trajectory as the filename given in `fname` from the trajectory `trj` with the simulation parameters `sim`
 TBW
 """
-function export_trajectory(fname, trj, sim)
+function export_trajectory(fname, trj, sim; to_export=:OutputDynamicsVariables)
     ase_io=pyimport("ase.io")
-    positions=map(NQCDynamics.get_positions, trj[:OutputDynamicsVariables])
+    positions=map(NQCDynamics.get_positions, trj[to_export])
     ase_trj=NQCBase.convert_to_ase_atoms(sim.atoms, positions, sim.cell)
     ase_io.write(fname, ase_trj)
 end
@@ -306,23 +306,27 @@ function EFT_LDFA_cube_model(ase_structure, parameters)
     return LDFAFriction(density, nqcd_atoms;friction_atoms=parameters["friction_atoms"])
 end
 
-#=
+
 function EFT_LDFA_scikit(ase_structure, parameters)
     nqcd_atoms, nqcd_positions, nqcd_cell=NQCBase.convert_from_ase_atoms(ase_structure)
     descriptors=pyimport("dscribe.descriptors")
+    scaler=read_pickle(parameters["eft_density_scaler"])
     density=SciKitDensity(
         descriptors.SOAP(
             species=unique(ase_structure.symbols),
             periodic=true,
             r_cut=get!(parameters, "EFT_SOAP_rcut", 7.0),
-            n_max=get!(parameters, "EFT_SOAP_nmax", 7.0),
-            l_max=get!(parameters, "EFT_SOAP_lmax", 7.0),
+            n_max=get!(parameters, "EFT_SOAP_nmax", 12),
+            l_max=get!(parameters, "EFT_SOAP_lmax", 8),
             average="off",
-            )
-    )
+        ),
+        read_pickle(parameters["eft_density_pickle"]),
+        ase_structure;
+        density_unit=u"Å^-3",
+        scaler=scaler)
     return LDFAFriction(density, nqcd_atoms; friction_atoms=parameters["friction_atoms"])
 end
-=#
+
 
 function EFT_ODF_ACE(ase_structure, parameters)
     eft_unit = u"ps^-1"
