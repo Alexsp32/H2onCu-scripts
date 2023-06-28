@@ -105,6 +105,14 @@ function cu_surface_z(config, indices)
     return mean([pos[end,i] for i in indices])
 end
 
+struct OutputHydrogenKineticEnergy
+    hydrogen_indices::Vector{Int}
+end
+
+function (hydrogen_kinetic_energy::OutputHydrogenKineticEnergy)(sol, i)
+    println(size(sol.u))
+    return map(x->DynamicsUtils.classical_kinetic_energy([1837.4715941070515 for i in hydrogen_kinetic_energy.hydrogen_indices],getindex(x, :, hydrogen_kinetic_energy.hydrogen_indices)), [DynamicsUtils.get_velocities(i) for i in sol.u])
+end
 
 @with_kw mutable struct StrictDesorptionTerminator
     hydrogen_indices
@@ -528,7 +536,9 @@ function mdef_2tm(parameters)
     desorption_callback=DesorptionTerminator(friction_model.friction_atoms, parameters["Cu_toplayer_indices"], parameters["desorption_min_surface_distance"], 0)
     terminate_callback=DynamicsUtils.TerminatingCallback(desorption_callback)
     # Run desorption simulations
-    if get!(parameters, "output_type", "last")=="full_trajectory"
+    if haskey(parameters, "outputs")
+        outputs=parameters["outputs"]
+    elseif get!(parameters, "output_type", "last")=="full_trajectory"
         outputs=(OutputDynamicsVariables, OutputPotentialEnergy, OutputKineticEnergy)
     elseif parameters["output_type"]=="last"
         outputs=OutputFinal
