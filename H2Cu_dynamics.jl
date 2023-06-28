@@ -441,7 +441,7 @@ function langevin_dynamics(parameters::Dict{String,Any})
         dt=get!(parameters, "timestep", 0.1u"fs"),
         trajectories=get!(parameters, "trajectories", 1),
         saveat=saveat_arg, # This might slow down calculations, check if actually useful. 
-        output=(OutputDynamicsVariables, OutputPotentialEnergy), # Positions, velocities and 
+        output=haskey(parameters, "outputs") ? parameters["outputs"] : (OutputDynamicsVariables, OutputPotentialEnergy), # Positions, velocities and 
         ensemble_algorithm=get!(parameters, "ensemble_algorithm", EnsembleSerial()),
         callbacks=DynamicsUtils.CellBoundaryCallback()
     )
@@ -552,6 +552,7 @@ function mdef_2tm(parameters)
     else
         saveat_arg=map(austrip, collect(parameters["equilibration_time"]:parameters["timestep"]:parameters["runtime"]))
     end
+    GC.gc()
     traj=run_dynamics(
         simulation,
         (0.0u"fs", get!(parameters, "runtime", 0.3u"ps")),
