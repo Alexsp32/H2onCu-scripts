@@ -108,7 +108,7 @@ end
 
 @with_kw mutable struct StrictDesorptionTerminator
     hydrogen_indices
-    top_layer_indices
+    top_layer_indices::Vector{Int}
     max_hydrogen_bond_distance=1.0
     min_desorption_distance=8.0
     desorption_trajectories=0
@@ -116,7 +116,7 @@ end
 
 @with_kw mutable struct DesorptionTerminator
     hydrogen_indices
-    top_layer_indices
+    top_layer_indices::Vector{Int}
     min_desorption_distance=8.0
     desorption_trajectories=0
 end
