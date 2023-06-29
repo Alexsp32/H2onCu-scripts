@@ -20,7 +20,6 @@ using NPZ
 using NQCDynamics
 using NQCBase: NQCBase
 using NQCModels
-using Pandas: read_pickle
 using Parameters
 using PyCall
 using Unitful
@@ -317,7 +316,7 @@ end
 function EFT_LDFA_scikit(ase_structure, parameters)
     nqcd_atoms, nqcd_positions, nqcd_cell=NQCBase.convert_from_ase_atoms(ase_structure)
     descriptors=pyimport("dscribe.descriptors")
-    scaler=read_pickle(parameters["eft_density_scaler"])
+    pd=pyimport("pandas")
     density=SciKitDensity(
         descriptors.SOAP(
             species=unique(ase_structure.symbols),
@@ -327,10 +326,10 @@ function EFT_LDFA_scikit(ase_structure, parameters)
             l_max=get!(parameters, "EFT_SOAP_lmax", 8),
             average="off",
         ),
-        read_pickle(parameters["eft_density_pickle"]),
+        pd.read_pickle(parameters["eft_density_pickle"]),
         ase_structure;
         density_unit=u"Å^-3",
-        scaler=scaler)
+        scaler=pd.read_pickle(parameters["eft_density_scaler"]))
     return LDFAFriction(density, nqcd_atoms; friction_atoms=parameters["friction_atoms"])
 end
 
