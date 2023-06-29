@@ -110,7 +110,6 @@ struct OutputHydrogenKineticEnergy
 end
 
 function (hydrogen_kinetic_energy::OutputHydrogenKineticEnergy)(sol, i)
-    println(size(sol.u))
     return map(x->DynamicsUtils.classical_kinetic_energy([1837.4715941070515 for i in hydrogen_kinetic_energy.hydrogen_indices],getindex(x, :, hydrogen_kinetic_energy.hydrogen_indices)), [DynamicsUtils.get_velocities(i) for i in sol.u])
 end
 
