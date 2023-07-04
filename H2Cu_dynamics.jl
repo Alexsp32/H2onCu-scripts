@@ -38,6 +38,12 @@ function driver(parameters)
 end
 
 #! Utility functions
+function extract_from_distribution!(parameters)
+    nqcd_distribution=jldopen(parameters["initial_conditions_file"])["nqcd_distribution"]
+    parameters["DynamicsVariables"]=rand(nqcd_distribution)
+    return parameters
+end
+
 """
     export_trajectory(fname, trj, sim)
     
@@ -497,7 +503,11 @@ end
 
 function mdef_2tm(parameters)
     # Load initial distribution
-    nqcd_distribution=jldopen(parameters["initial_conditions_file"])["nqcd_distribution"]
+    if haskey(parameters, "DynamicsVariables")
+        nqcd_distribution=parameters["DynamicsVariables"]
+    else
+        nqcd_distribution=jldopen(parameters["initial_conditions_file"])["nqcd_distribution"]
+    end
     # Create an AdiabaticASEModel for the base slab
     ase_io=pyimport("ase.io")
     ase=pyimport("ase")
