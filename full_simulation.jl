@@ -96,17 +96,19 @@ fixed_parameters=Dict(
 )
 
 # Set variables
-
 variables=Dict(
     "friction_atoms" => [[55,56]],
 )
 # Total trajectories to run: 1
 # Estimated time per trajectory: unknown
 
-job_queue=build_job_queue(fixed_parameters, variables)
-serialise_queue!(job_queue)
-# ase_io=pyimport("ase.io")
-# fixed_parameters["friction_model"]=set_friction_model(ase_io.read(fixed_parameters["starting_structure"]), fixed_parameters)
-println("Done")
-#end
+if isfile(args["params"])
+    @warn "Simulation queue already exists and will not be regenerated. Delete "*args["params"]*" to regenerate the queue."
+    exit()
+else
+    job_queue=build_job_queue(fixed_parameters, variables)
+    serialise_queue!(job_queue)
+    @info "Generated simulation queue at "*args["params"]
+    exit()
+end
 
