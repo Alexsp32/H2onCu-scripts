@@ -51,15 +51,21 @@ if args["worker"]!=0
             # ACE friction should now be initialised
         end
     end
-    # !Warning: Only one ACE model can be used at a time. 
+    kick_params=run_params
+    kick_params["runtime"]=kick_params["timestep"]
+    kick_params["saveat"]=kick_params["timestep"]
+    println("Running a single time step to speed things up.")
+    driver(kick_params)
+    println("Now running the requested simulation.")
     results=driver(run_params)
-    jldsave("tmp/"*ENV["SLURM_JOBID"]*"_"*string(args["worker"])*".jld2")
+    jldsave("tmp/"*ENV["SLURM_JOBID"]*"_"*string(args["worker"])*".jld2"; results=results)
     exit()
 end
 
 using NQCDynamics
 using Unitful
 using DiffEqBase
+include("../scripts/H2Cu_dynamics.jl")
 
 ######### SIMULATION PARAMETER BLOCK
 
