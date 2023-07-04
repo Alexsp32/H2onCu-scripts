@@ -11,7 +11,7 @@
 #SBATCH --chdir=%%fullpath
 
 # Executable to call
-x=julia
+x="julia +release"
 
 # Path to input script
 f=full_simulation.jl
@@ -42,7 +42,7 @@ echo "(1/4) Python executable in scope is:";
 echo | which python;
 echo "
 (2/4) Rebuilding PyCall with Python executable in scope:";
-$x $pycall_script
+$x --project=$JULIA_PROJECT $pycall_script
 
 echo "
 \
@@ -50,6 +50,5 @@ echo "
 $x --project=$JULIA_PROJECT $f 
 
 echo "(4/4) Running parallel jobs from $f:"
-parallel $PARALLEL_OPTIONS srun $SRUN_OPTIONS $f --worker ::: $SUBJOBS
-
+parallel $PARALLEL_OPTIONS srun $SRUN_OPTIONS $PARALLEL_EXEC ::: {1..2}
 
