@@ -21,7 +21,7 @@ o=%%file_output
 
 # Parallelisation options
 SRUN_OPTIONS="-N 1 -n 1 --exclusive"
-PARALLEL_OPTIONS="-N 1 --delay=2 -j $SLURM_NTASKS --joblog parallel-${SLURM_JOBID}.log"
+PARALLEL_OPTIONS="-N 1 --delay=2 -j $SLURM_NTASKS --joblog parallel-${SLURM_JOBID}.log" # --resume with given logfile to restart after running foul of time limits
 SUBJOBS={1..20} # Size of the queue array (or subsection to process)
 
 # Any further definitions
