@@ -569,10 +569,10 @@ function mdef_2tm(parameters)
         results=traj
     end
     # Hand over an ase object for the initial structure and a simulation object for further evaluation
-    parameters["nqcd_simulation"]=simulation
-    parameters["ase_object"]=ase_structure
+    # parameters["nqcd_simulation"]=simulation
+    # parameters["ase_object"]=ase_structure
     # Add the number of times the termination callback was true for the number of desorption events. 
-    parameters["desorption_trajectories"]=desorption_callback.desorption_trajectories
+    # parameters["desorption_trajectories"]=desorption_callback.desorption_trajectories
     return (results, parameters)
 end
 
