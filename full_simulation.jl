@@ -30,7 +30,6 @@ if args["worker"]!=0
     # Activate ACE friction if necessary (needs to be initialised in global scope)
     if haskey(run_params, "friction_type") && run_params["friction_type"]=="ODF_ACE"
         # Poke ACEds with a stick!
-        @everywhere begin
             model_params = load_object(run_params["ODF_ACE_params"])        
             m_cov = ac_matrixmodel(ACE.EuclideanVector(Float64),model_params["species_friction"],model_params["species_env"];n_rep=model_params["n_rep_cov"], rcut_on = model_params["cutoff"], rcut_off = model_params["cutoff"], maxorder_on=model_params["max_order_on"], maxdeg_on=model_params["max_degree_on"],
                     species_maxorder_dict_on = model_params["species_maxorder_dict_on_cov"], 
@@ -50,8 +49,7 @@ if args["worker"]!=0
             ACE.set_params!(eft_model_ace, c_fit)
             # ACE friction should now be initialised
         end
-    end
-    kick_params=run_params
+    kick_params=copy(run_params) # Absolutely DO NOT REMOVE copy() under any circumstances - You will bork your simulation parameters by not copying the dict. 
     kick_params["runtime"]=kick_params["timestep"]
     kick_params["saveat"]=kick_params["timestep"]
     println("Running a single time step to speed things up.")
