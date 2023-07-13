@@ -140,7 +140,7 @@ function (desorption_terminator::StrictDesorptionTerminator)(u,t,integrator)::Bo
     h_molecules=findall(x->x<=desorption_terminator.max_hydrogen_bond_distance, distances) # Find where the distance is sufficiently small. 
     surface_z=cu_surface_z(u, desorption_terminator.top_layer_indices)
     for molecule in h_molecules
-        if h2_com(u, 1.0, molecule...)[3]-surface_z>=desorption_terminator.min_desorption_distance # Check if H2 COM is far enough away from the surface COM
+        if h2_com(u, 1.0, molecule...)[3]-surface_z>=ang_to_au(desorption_terminator.min_desorption_distance) # Check if H2 COM is far enough away from the surface COM
             desorption_terminator.desorption_trajectories+=1
             return true
         end
@@ -160,7 +160,7 @@ function (desorption_terminator::DesorptionTerminator)(u,t,integrator)::Bool
     h_combinations=collect(multiset_combinations(desorption_terminator.hydrogen_indices, 2)) # Unique H neighbour list
     surface_z=cu_surface_z(u, desorption_terminator.top_layer_indices)
     for molecule in h_combinations
-        if h2_com(u, 1.0, molecule...)[3]-surface_z>=desorption_terminator.min_desorption_distance # Check if H2 COM is far enough away from the surface COM
+        if h2_com(u, 1.0, molecule...)[3]-surface_z>=ang_to_au(desorption_terminator.min_desorption_distance) # Check if H2 COM is far enough away from the surface COM
             desorption_terminator.desorption_trajectories+=1
             return true
         end
