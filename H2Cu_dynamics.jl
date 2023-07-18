@@ -42,8 +42,12 @@ function desorption_angle(trajectory::Vector, indices::Vector{Int}, simulation::
     # First determine where the reaction occurred on the surface. 
     desorption_frame=get_desorption_frame(trajectory, indices, simulation; distance_threshold=distance_threshold)
     println("Desorption frame: ", desorption_frame)
-    # Then create a desorption translation vector by taking the H2 centre of mass at desorption onset and in the final image. 
-    desorption_vector=h2_com(trajectory[end], simulation, indices...)-h2_com(trajectory[desorption_frame], simulation, indices...)
+    # Create all possible cell boundary wraps to ensure the correct centre of mass is used. 
+    translation_vectors=[simulation.cell.vectors*[i,j,k] for i in -1:1 for j in -1:1 for k in -1:1]
+    desorption_com=map(x->x+pbc_center_of_mass(trajectory[desorption_frame], indices..., simulation), translation_vectors)
+    translated_distances=norm.([pbc_center_of_mass(trajectory[end], indices..., simulation)-i for i in desorption_com])
+    # Then create a desorption translation vector by taking the H2 centre of mass at desorption onset and in the final image, now that cell boundary wrapping was accounted for.  
+    desorption_vector=pbc_center_of_mass(trajectory[end], indices..., simulation)-desorption_com[argmin(translated_distances)]
     println("Desorption vector: ", desorption_vector)
     # Now convert into an angle by arccos((a•b)/(|a|*|b|))
     return rad2deg(acos((dot(desorption_vector, surface_normal))/(norm(desorption_vector)*norm(surface_normal))))
@@ -65,6 +69,17 @@ function pbc_distance(config::Any, ind1::Int, ind2::Int, simulation::NQCDynamics
     positions=NQCDynamics.get_positions(config)
     translations=[[i,j,k] for i in -1:1 for j in -1:1 for k in -1:1]
     return min(map(x->au_to_ang(norm(positions[:,ind1].-positions[:,ind2]+simulation.cell.vectors*x)), translations)...).*u"Å"
+end
+
+function pbc_center_of_mass(config::Matrix, ind1::Int, ind2::Int, simulation::NQCDynamics.AbstractSimulation)
+    translations=[[i,j,k] for i in -1:1 for j in -1:1 for k in -1:1]
+    which_translation=argmin(map(x->au_to_ang(norm(config[:,ind1].-config[:,ind2]+simulation.cell.vectors*x)), translations))
+    return (simulation.atoms.masses[ind1]*config[:,ind1]+simulation.atoms.masses[ind2]*config[:,ind2]+simulation.cell.vectors*translations[which_translation])/sum(simulation.atoms.masses[[ind1,ind2]])
+end
+
+function pbc_center_of_mass(config::Any, ind1::Int, ind2::Int, simulation::NQCDynamics.AbstractSimulation)
+    positions=NQCDynamics.get_positions(config)
+    return pbc_center_of_mass(positions, ind1, ind2, simulation)
 end
 
 function extract_from_distribution!(parameters)
@@ -111,21 +126,15 @@ end
     Returns centre of mass of two atoms based on their masses. 
 TBW
 """
-function h2_com(config::Any, sim::NQCDynamics.Simulation, i1, i2)
-    mass_ratio=sim.atoms.masses[i2]/sim.atoms.masses[i1]
+function h2_com(config::Any, sim::NQCDynamics.Simulation, i1::Int, i2::Int)
     pos=NQCDynamics.get_positions(config)
-    return pos[:,i1].+mass_ratio*(pos[:,i2]-pos[:,i1])
+    masses=sim.atoms.masses
+    return h2_com(pos, masses, i1, i2)
 end
 
-"""
-    h2_com(config:Any, mass_ratio::Float64, i1, i2)
 
-    Returns centre of mass of two atoms without requiring a Simulation object
-TBW
-"""
-function h2_com(config::Any, mass_ratio::Float64, i1, i2)
-    pos=NQCDynamics.get_positions(config)
-    return pos[:,i1].+mass_ratio*(pos[:,i2]-pos[:,i1])
+function h2_com(config::Matrix, masses::Vector, i1::Int, i2::Int)
+    return sum([masses[i]*config[:,i] for i in [i1, i2]])/sum([masses[i] for i in [i1, i2]])
 end
 
 """
