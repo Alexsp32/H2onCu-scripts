@@ -38,6 +38,35 @@ function driver(parameters)
 end
 
 #! Utility functions
+function desorption_angle(trajectory::Vector, indices::Vector{Int}, simulation::NQCDynamics.AbstractSimulation; surface_normal=[0,0,1], distance_threshold=1.0u"Å")
+    # First determine where the reaction occurred on the surface. 
+    desorption_frame=get_desorption_frame(trajectory, indices, simulation; distance_threshold=distance_threshold)
+    println("Desorption frame: ", desorption_frame)
+    # Then create a desorption translation vector by taking the H2 centre of mass at desorption onset and in the final image. 
+    desorption_vector=h2_com(trajectory[end], simulation, indices...)-h2_com(trajectory[desorption_frame], simulation, indices...)
+    println("Desorption vector: ", desorption_vector)
+    # Now convert into an angle by arccos((a•b)/(|a|*|b|))
+    return rad2deg(acos((dot(desorption_vector, surface_normal))/(norm(desorption_vector)*norm(surface_normal))))
+end
+
+function get_desorption_frame(trajectory::Vector, indices::Vector{Int}, simulation::NQCDynamics.AbstractSimulation;distance_threshold=1.4u"Å")
+    return length(trajectory)-findfirst(x->pbc_distance(x, indices..., simulation)≥distance_threshold, reverse(trajectory))+1
+end
+
+"""
+    pbc_distance(config::Any, ind1::Int, ind2::Int, simulation::NQCDynamics.AbstractSimulation)
+
+    **Returns in Angstom, not in Bohr - Check units.**
+    Calculates the distance between two atoms, including a check if the copy of the second atom in any neighbouring unit cell is closer. 
+    This variant is designed for trajectories where cell boundary wrapping has been used. 
+TBW
+"""
+function pbc_distance(config::Any, ind1::Int, ind2::Int, simulation::NQCDynamics.AbstractSimulation)
+    positions=NQCDynamics.get_positions(config)
+    translations=[[i,j,k] for i in -1:1 for j in -1:1 for k in -1:1]
+    return min(map(x->au_to_ang(norm(positions[:,ind1].-positions[:,ind2]+simulation.cell.vectors*x)), translations)...).*u"Å"
+end
+
 function extract_from_distribution!(parameters)
     nqcd_distribution=jldopen(parameters["initial_conditions_file"])["nqcd_distribution"]
     parameters["DynamicsVariables"]=rand(nqcd_distribution)
@@ -83,7 +112,7 @@ end
 TBW
 """
 function h2_com(config::Any, sim::NQCDynamics.Simulation, i1, i2)
-    mass_ratio=sim.masses[i2]/sim.masses[i1]
+    mass_ratio=sim.atoms.masses[i2]/sim.atoms.masses[i1]
     pos=NQCDynamics.get_positions(config)
     return pos[:,i1].+mass_ratio*(pos[:,i2]-pos[:,i1])
 end
