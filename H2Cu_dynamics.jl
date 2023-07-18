@@ -38,19 +38,19 @@ function driver(parameters)
 end
 
 #! Utility functions
+function angle_between(v1::Vector, v2::Vector)
+    return rad2deg(acos(dot(v1,v2)/prod(norm, [v1, v2])))
+end
+
 function desorption_angle(trajectory::Vector, indices::Vector{Int}, simulation::NQCDynamics.AbstractSimulation; surface_normal=[0,0,1], distance_threshold=1.0u"Å")
     # First determine where the reaction occurred on the surface. 
     desorption_frame=get_desorption_frame(trajectory, indices, simulation; distance_threshold=distance_threshold)
     println("Desorption frame: ", desorption_frame)
-    # Create all possible cell boundary wraps to ensure the correct centre of mass is used. 
-    translation_vectors=[simulation.cell.vectors*[i,j,k] for i in -1:1 for j in -1:1 for k in -1:1]
-    desorption_com=map(x->x+pbc_center_of_mass(trajectory[desorption_frame], indices..., simulation), translation_vectors)
-    translated_distances=norm.([pbc_center_of_mass(trajectory[end], indices..., simulation)-i for i in desorption_com])
-    # Then create a desorption translation vector by taking the H2 centre of mass at desorption onset and in the final image, now that cell boundary wrapping was accounted for.  
-    desorption_vector=pbc_center_of_mass(trajectory[end], indices..., simulation)-desorption_com[argmin(translated_distances)]
-    println("Desorption vector: ", desorption_vector)
+    # Determine the average centre of mass velocity to decrease error due to vibration and rotation orthogonal to true translational component. 
+    com_velocities=map(x->velocity_com(x, indices[1], indices[2], simulation), trajectory[desorption_frame:end])
+    average_velocity=mean(cat(com_velocities...;dims=2);dims=2)
     # Now convert into an angle by arccos((a•b)/(|a|*|b|))
-    return rad2deg(acos((dot(desorption_vector, surface_normal))/(norm(desorption_vector)*norm(surface_normal))))
+    return angle_between(vec(average_velocity), surface_normal)
 end
 
 function get_desorption_frame(trajectory::Vector, indices::Vector{Int}, simulation::NQCDynamics.AbstractSimulation;distance_threshold=1.4u"Å")
@@ -79,6 +79,11 @@ end
 
 function pbc_center_of_mass(config::Any, ind1::Int, ind2::Int, simulation::NQCDynamics.AbstractSimulation)
     positions=NQCDynamics.get_positions(config)
+    return pbc_center_of_mass(positions, ind1, ind2, simulation)
+end
+
+function velocity_com(config::Any, ind1::Int, ind2::Int, simulation::NQCDynamics.AbstractSimulation)
+    positions=NQCDynamics.get_velocities(config)
     return pbc_center_of_mass(positions, ind1, ind2, simulation)
 end
 
