@@ -53,8 +53,27 @@ function desorption_angle(trajectory::Vector, indices::Vector{Int}, simulation::
     return angle_between(vec(average_velocity), surface_normal)
 end
 
+struct OutputDesorptionTrajectory{S,I,N,D,X}
+    sim::S
+    indices::I
+    surface_normal::N
+    distance_threshold::D
+    extra_frames::X
+end
+OutputDesorptionTrajectory(sim, indices; surface_normal=[0,0,1], distance_threshold=0.9u"Å", extra_frames=0)=OutputDesorptionTrajectory(sim, indices, surface_normal, distance_threshold, extra_frames)
+"""
+    (output::OutputDesorptionTrajectory)(sol, i)
+
+    Only output parts of the simulation where desorption is occurring
+TBW
+"""
+function (output::OutputDesorptionTrajectory)(sol, i)
+    desorption_frame=get_desorption_frame(sol.u, output.indices..., output.sim; distance_threshold=output.distance_threshold)
+    return sol.u[desorption_frame:end]
+end
+
 function get_desorption_frame(trajectory::Vector, indices::Vector{Int}, simulation::NQCDynamics.AbstractSimulation;distance_threshold=1.4u"Å")
-    return length(trajectory)-findfirst(x->pbc_distance(x, indices..., simulation)≥distance_threshold, reverse(trajectory))+1
+    return findfirst(x->pbc_distance(x, indices..., simulation)<distance_threshold && velocity_com(x, indices..., simulation)[3]>0,trajectory)
 end
 
 """
