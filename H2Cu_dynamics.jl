@@ -146,8 +146,9 @@ end
 
 """
     h2_com(config::Any, sim::NQCDynamics.Simulation, i1, i2)
-
-    Returns centre of mass of two atoms based on their masses. 
+    Returns centre of mass of two atoms based on their masses.
+    This variant of the function is meant to work on NQCD DynamicsVariables. 
+    The simulation is only accessed for atomic masses.   
 TBW
 """
 function h2_com(config::Any, sim::NQCDynamics.Simulation, i1::Int, i2::Int)
@@ -157,6 +158,12 @@ function h2_com(config::Any, sim::NQCDynamics.Simulation, i1::Int, i2::Int)
 end
 
 
+"""
+    h2_com(config::Matrix, masses::Vector, i1::Int, i2::Int)
+
+    Determines the centre of mass between slices `[:,i1]` and `[:,i2]` of the Matrix `config`. 
+TBW
+"""
 function h2_com(config::Matrix, masses::Vector, i1::Int, i2::Int)
     return sum([masses[i]*config[:,i] for i in [i1, i2]])/sum([masses[i] for i in [i1, i2]])
 end
@@ -186,6 +193,7 @@ end
     max_hydrogen_bond_distance=1.0
     min_desorption_distance=8.0
     desorption_trajectories=0
+    simulation::NQCDynamics.AbstractSimulation
 end
 
 @with_kw mutable struct DesorptionTerminator
@@ -193,6 +201,7 @@ end
     top_layer_indices::Vector{Int}
     min_desorption_distance=8.0
     desorption_trajectories=0
+    simulation::NQCDynamics.AbstractSimulation
 end
 
 function (desorption_terminator::StrictDesorptionTerminator)(u,t,integrator)::Bool
@@ -202,7 +211,7 @@ function (desorption_terminator::StrictDesorptionTerminator)(u,t,integrator)::Bo
     h_molecules=findall(x->x<=desorption_terminator.max_hydrogen_bond_distance, distances) # Find where the distance is sufficiently small. 
     surface_z=cu_surface_z(u, desorption_terminator.top_layer_indices)
     for molecule in h_molecules
-        if h2_com(u, 1.0, molecule...)[3]-surface_z>=ang_to_au(desorption_terminator.min_desorption_distance) # Check if H2 COM is far enough away from the surface COM
+        if h2_com(u, desorption_terminator.simulation, molecule...)[3]-surface_z>=ang_to_au(desorption_terminator.min_desorption_distance) # Check if H2 COM is far enough away from the surface COM
             desorption_terminator.desorption_trajectories+=1
             return true
         end
@@ -222,16 +231,12 @@ function (desorption_terminator::DesorptionTerminator)(u,t,integrator)::Bool
     h_combinations=collect(multiset_combinations(desorption_terminator.hydrogen_indices, 2)) # Unique H neighbour list
     surface_z=cu_surface_z(u, desorption_terminator.top_layer_indices)
     for molecule in h_combinations
-        if h2_com(u, 1.0, molecule...)[3]-surface_z>=ang_to_au(desorption_terminator.min_desorption_distance) # Check if H2 COM is far enough away from the surface COM
+        if h2_com(u, desorption_terminator.simulation, molecule...)[3]-surface_z>=ang_to_au(desorption_terminator.min_desorption_distance) # Check if H2 COM is far enough away from the surface COM
             desorption_terminator.desorption_trajectories+=1
             return true
         end
     end
     return false
-end
-
-mutable struct ElectronicTemperatureFunction
-    temperature_profile
 end
 
 
@@ -603,7 +608,7 @@ function mdef_2tm(parameters)
         cell=nqcd_cell,
         temperature=haskey(parameters, "temperature") ? parameters["temperature"] : T_el_function
     )
-    desorption_callback=DesorptionTerminator(friction_model.friction_atoms, parameters["Cu_toplayer_indices"], parameters["desorption_min_surface_distance"], 0)
+    desorption_callback=DesorptionTerminator(friction_model.friction_atoms, parameters["Cu_toplayer_indices"], parameters["desorption_min_surface_distance"], 0, simulation)
     terminate_callback=DynamicsUtils.TerminatingCallback(desorption_callback)
     # Run desorption simulations
     if haskey(parameters, "outputs")
