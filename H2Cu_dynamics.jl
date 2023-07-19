@@ -75,7 +75,7 @@ OutputDesorptionTrajectory(structure, indices; surface_normal=[0,0,1], distance_
 TBW
 """
 function (output::OutputDesorptionTrajectory)(sol, i)
-    desorption_frame=get_desorption_frame(sol.u, output.indices..., output.sim; distance_threshold=output.distance_threshold, surface_normal=surface_normal)
+    desorption_frame=get_desorption_frame(sol.u, output.indices..., output.sim; distance_threshold=output.distance_threshold, surface_normal=output.surface_normal)
     return isa(desorption_frame, Int) ? sol.u[desorption_frame-output.extra_frames:end] : nothing
 end
 
