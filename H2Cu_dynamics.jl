@@ -75,12 +75,13 @@ OutputDesorptionTrajectory(structure, indices; surface_normal=[0,0,1], distance_
 TBW
 """
 function (output::OutputDesorptionTrajectory)(sol, i)
-    desorption_frame=get_desorption_frame(sol.u, output.indices..., output.sim; distance_threshold=output.distance_threshold)
+    desorption_frame=get_desorption_frame(sol.u, output.indices..., output.sim; distance_threshold=output.distance_threshold, surface_normal=surface_normal)
     return isa(desorption_frame, Int) ? sol.u[desorption_frame-output.extra_frames:end] : nothing
 end
 
-function get_desorption_frame(trajectory::Vector, indices::Vector{Int}, simulation::NQCDynamics.AbstractSimulation;distance_threshold=1.4u"Å")
-    return findfirst(x->pbc_distance(x, indices..., simulation)<distance_threshold && velocity_com(x, indices..., simulation)[3]>0,trajectory)
+function get_desorption_frame(trajectory::Vector, indices::Vector{Int}, simulation::NQCDynamics.AbstractSimulation;distance_threshold=1.4u"Å", surface_normal::Vector=[0,0,1])
+    # Two criteria: Distance between two atoms (wrt PBC) must be below `distance_threshold` and CoM velocity must be positive wrt surface normal vector. 
+    return findfirst(x->pbc_distance(x, indices..., simulation)<distance_threshold && velocity_com(x, indices..., simulation).*(surface_normal./norm(surface_normal))>0,trajectory)
 end
 
 """
