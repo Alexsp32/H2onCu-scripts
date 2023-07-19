@@ -53,14 +53,21 @@ function desorption_angle(trajectory::Vector, indices::Vector{Int}, simulation::
     return angle_between(vec(average_velocity), surface_normal)
 end
 
-struct OutputDesorptionTrajectory{S,I,N,D,X}
-    sim::S
-    indices::I
-    surface_normal::N
-    distance_threshold::D
-    extra_frames::X
+struct OutputDesorptionTrajectory
+    simulation::NQCDynamics.AbstractSimulation
+    indices::Vector{Int}
+    surface_normal::Vector
+    distance_threshold
+    extra_frames::Int
+    function OutputDesorptionTrajectory(starting_structure, indices, surface_normal, distance_threshold, extra_frames)
+        ase_io=pyimport("ase.io")
+        structure=ase_io.read(starting_structure)
+        nqcd_atoms, nqcd_positions, nqcd_cell=NQCBase.convert_from_ase_atoms(structure)
+        sim=Simulation(nqcd_atoms, Free(3); cell=nqcd_cell) #!Warning: This simulation object doesn't evaluate the correct potential. 
+        new(sim, indices, surface_normal, distance_threshold, extra_frames)
+    end
 end
-OutputDesorptionTrajectory(sim, indices; surface_normal=[0,0,1], distance_threshold=0.9u"Å", extra_frames=0)=OutputDesorptionTrajectory(sim, indices, surface_normal, distance_threshold, extra_frames)
+OutputDesorptionTrajectory(structure, indices; surface_normal=[0,0,1], distance_threshold=0.9u"Å", extra_frames=0)=OutputDesorptionTrajectory(structure, indices, surface_normal, distance_threshold, extra_frames)
 """
     (output::OutputDesorptionTrajectory)(sol, i)
 
@@ -69,7 +76,7 @@ TBW
 """
 function (output::OutputDesorptionTrajectory)(sol, i)
     desorption_frame=get_desorption_frame(sol.u, output.indices..., output.sim; distance_threshold=output.distance_threshold)
-    return sol.u[desorption_frame-output.extra_frames:end]
+    return isa(desorption_frame, Int) ? sol.u[desorption_frame-output.extra_frames:end] : nothing
 end
 
 function get_desorption_frame(trajectory::Vector, indices::Vector{Int}, simulation::NQCDynamics.AbstractSimulation;distance_threshold=1.4u"Å")
