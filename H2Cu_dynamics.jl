@@ -69,7 +69,7 @@ TBW
 """
 function (output::OutputDesorptionTrajectory)(sol, i)
     desorption_frame=get_desorption_frame(sol.u, output.indices..., output.sim; distance_threshold=output.distance_threshold)
-    return sol.u[desorption_frame:end]
+    return sol.u[desorption_frame-output.extra_frames:end]
 end
 
 function get_desorption_frame(trajectory::Vector, indices::Vector{Int}, simulation::NQCDynamics.AbstractSimulation;distance_threshold=1.4u"Å")
