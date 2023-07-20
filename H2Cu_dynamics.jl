@@ -38,6 +38,19 @@ function driver(parameters)
 end
 
 #! Utility functions
+function pbc_neighbour_positions(positions::Any, index::Int, distance_in_au, simulation::NQCDynamics.AbstractSimulation)
+    distances=map(x->pbc_distance(positions, index, x, simulation), collect(1:length(simulation.atoms)))
+    neighbours=findall(x->x≤auconvert(u"Å",distance_in_au) && x!=0.0u"Å", distances)
+    positions_matrix=NQCDynamics.get_positions(positions)
+    translations=[[i,j,k] for i in -1:1 for j in -1:1 for k in -1:1]
+    relative_positions_pbc=zeros((NQCModels.dofs(simulation), length(neighbours)))
+    for j in eachindex(neighbours)
+        which_translation=argmin(map(x->norm(positions_matrix[:,index]-positions_matrix[:,neighbours[j]]+simulation.cell.vectors*x), translations))
+        relative_positions_pbc[:,j].=positions_matrix[:,index]-positions_matrix[:,neighbours[j]]+simulation.cell.vectors*translations[which_translation]
+    end
+    return (relative_positions_pbc, simulation.atoms.types[neighbours])
+end
+
 function angle_between(v1::Vector, v2::Vector)
     return rad2deg(acos(dot(v1,v2)/prod(norm, [v1, v2])))
 end
@@ -81,7 +94,7 @@ end
 
 function get_desorption_frame(trajectory::Vector, indices::Vector{Int}, simulation::NQCDynamics.AbstractSimulation;distance_threshold=1.4u"Å", surface_normal::Vector=[0,0,1])
     # Two criteria: Distance between two atoms (wrt PBC) must be below `distance_threshold` and CoM velocity must be positive wrt surface normal vector. 
-    return findfirst(x->pbc_distance(x, indices..., simulation)<distance_threshold && velocity_com(x, indices..., simulation).*(surface_normal./norm(surface_normal))>0,trajectory)
+    return findfirst(x->pbc_distance(x, indices..., simulation)<distance_threshold && dot(velocity_com(x, indices..., simulation), normalize(surface_normal))>0,trajectory)
 end
 
 """
