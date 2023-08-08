@@ -51,6 +51,12 @@ function pbc_neighbour_positions(positions::Any, index::Int, distance_in_au, sim
     return (relative_positions_pbc, simulation.atoms.types[neighbours])
 end
 
+"""
+    angle_between(v1::Vector, v2::Vector)
+
+    Returns the angle between two vectors in degrees. (dot product relation)
+TBW
+"""
 function angle_between(v1::Vector, v2::Vector)
     return rad2deg(acos(dot(v1,v2)/prod(norm, [v1, v2])))
 end
@@ -58,12 +64,41 @@ end
 function desorption_angle(trajectory::Vector, indices::Vector{Int}, simulation::NQCDynamics.AbstractSimulation; surface_normal=[0,0,1], distance_threshold=1.0u"Å")
     # First determine where the reaction occurred on the surface. 
     desorption_frame=get_desorption_frame(trajectory, indices, simulation; distance_threshold=distance_threshold)
-    println("Desorption frame: ", desorption_frame)
+    if isa(desorption_frame, Nothing)
+        @debug "No desorption event detected in trajectory"
+        return nothing
+    end
+    @debug "Desorption frame: $(desorption_frame)"
     # Determine the average centre of mass velocity to decrease error due to vibration and rotation orthogonal to true translational component. 
-    com_velocities=map(x->velocity_com(x, indices[1], indices[2], simulation), trajectory[desorption_frame:end])
+    com_velocities=map(x->velocity_com(x, indices[1], indices[2]), trajectory[desorption_frame:end])
     average_velocity=mean(cat(com_velocities...;dims=2);dims=2)
     # Now convert into an angle by arccos((a•b)/(|a|*|b|))
     return angle_between(vec(average_velocity), surface_normal)
+end
+
+struct OutputDesorptionAngle
+    simulation::NQCDynamics.AbstractSimulation
+    indices::Vector{Int}
+    surface_normal::Vector
+    distance_threshold
+    function OutputDesorptionAngle(structure, indices, surface_normal, distance_threshold)
+        ase_io=pyimport("ase.io")
+        structure=ase_io.read(structure)
+        nqcd_atoms, nqcd_positions, nqcd_cell=NQCBase.convert_from_ase_atoms(structure)
+        sim=Simulation(nqcd_atoms, Free(3); cell=nqcd_cell) #!Warning: This simulation object doesn't evaluate the correct potential. 
+        new(sim, indices, surface_normal, distance_threshold)
+    end
+end
+OutputDesorptionAngle(structure, indices; surface_normal=[0,0,1], distance_threshold=0.9u"Å")=OutputDesorptionAngle(structure, indices, surface_normal, distance_threshold)
+
+"""
+    (evaluation_process::OutputDesorptionAngle)(sol, i)
+
+    Outputs the desorption angle in degrees (relative to the surface normal) if a desorption event was detected. 
+TBW
+"""
+function (evaluation_process::OutputDesorptionAngle)(sol, i)
+    return desorption_angle(sol.u, evaluation_process.indices, evaluation_process.simulation; surface_normal=evaluation_process.surface_normal, distance_threshold=evaluation_process.distance_threshold)
 end
 
 struct OutputDesorptionTrajectory
@@ -94,21 +129,41 @@ end
 
 function get_desorption_frame(trajectory::Vector, indices::Vector{Int}, simulation::NQCDynamics.AbstractSimulation;distance_threshold=1.4u"Å", surface_normal::Vector=[0,0,1])
     # Two criteria: Distance between two atoms (wrt PBC) must be below `distance_threshold` and CoM velocity must be positive wrt surface normal vector. 
-    return findfirst(x->pbc_distance(x, indices..., simulation)<distance_threshold && dot(velocity_com(x, indices..., simulation), normalize(surface_normal))>0,trajectory)
+    function distance_condition(x)
+        if pbc_distance(x, indices..., simulation)<distance_threshold
+            @debug "Distance condition evaluated true"
+            return true
+        else
+            return false
+        end
+    end
+    function com_velocity_condition(x)
+        if dot(velocity_com(x, indices...), normalize(surface_normal))>0
+            @debug "Normal velocity condition evaluated true"
+            return true
+        else
+            return false
+        end
+    end
+    return findfirst(x-> distance_condition(x) && com_velocity_condition(x) ,trajectory)
+end
+
+function pbc_distance(config::Any, ind1::Int, ind2::Int, simulation::NQCDynamics.AbstractSimulation)
+    positions=NQCDynamics.get_positions(config)
+    return pbc_distance(positions, ind1, ind2, simulation)
 end
 
 """
-    pbc_distance(config::Any, ind1::Int, ind2::Int, simulation::NQCDynamics.AbstractSimulation)
+    pbc_distance(config::Matrix, ind1::Int, ind2::Int, simulation::NQCDynamics.AbstractSimulation)
 
     **Returns in Angstom, not in Bohr - Check units.**
     Calculates the distance between two atoms, including a check if the copy of the second atom in any neighbouring unit cell is closer. 
     This variant is designed for trajectories where cell boundary wrapping has been used. 
 TBW
 """
-function pbc_distance(config::Any, ind1::Int, ind2::Int, simulation::NQCDynamics.AbstractSimulation)
-    positions=NQCDynamics.get_positions(config)
+function pbc_distance(config::Matrix, ind1::Int, ind2::Int, simulation::NQCDynamics.AbstractSimulation)
     translations=[[i,j,k] for i in -1:1 for j in -1:1 for k in -1:1]
-    return min(map(x->au_to_ang(norm(positions[:,ind1].-positions[:,ind2]+simulation.cell.vectors*x)), translations)...).*u"Å"
+    return min(map(x->au_to_ang(norm(config[:,ind1].-config[:,ind2]+simulation.cell.vectors*x)), translations)...).*u"Å"
 end
 
 function pbc_center_of_mass(config::Matrix, ind1::Int, ind2::Int, simulation::NQCDynamics.AbstractSimulation)
@@ -122,9 +177,9 @@ function pbc_center_of_mass(config::Any, ind1::Int, ind2::Int, simulation::NQCDy
     return pbc_center_of_mass(positions, ind1, ind2, simulation)
 end
 
-function velocity_com(config::Any, ind1::Int, ind2::Int, simulation::NQCDynamics.AbstractSimulation)
+function velocity_com(config::Any, ind1::Int, ind2::Int)
     positions=NQCDynamics.get_velocities(config)
-    return pbc_center_of_mass(positions, ind1, ind2, simulation)
+    return 0.5*(config[:,ind1].+config[:,ind2])
 end
 
 function extract_from_distribution!(parameters)
@@ -148,7 +203,7 @@ end
 
 """
     distance(config::Matrix, i1, i2)
-    Interatomic distance for a position Matrix. 
+    Interatomic distance in Angstrom for a position Matrix. 
 TBW
 """
 function distance(config::Matrix, i1, i2)
@@ -157,7 +212,7 @@ end
 
 """
     distance(config::Any, i1, i2)
-    Interatomic distance for DynamicsVariables. 
+    Interatomic distance in Angstrom for DynamicsVariables. 
 TBW
 """
 function distance(config::Any, i1, i2)
@@ -600,8 +655,6 @@ function mdef_2tm(parameters)
     ase_io=pyimport("ase.io")
     ase=pyimport("ase")
     ase_structure=ase_io.read(parameters["starting_structure"])
-    # Assign the chosen PES model
-    # ToDo: Handle PES models that aren't an ASE calculator.
     # Initialise PES model
     nqcd_model=nothing
     nqcd_model=set_potential_energy_surface(ase_structure, parameters) # Choose the desired ML model type and attach its calculator to ase_structure
@@ -666,11 +719,6 @@ function mdef_2tm(parameters)
     else
         results=traj
     end
-    # Hand over an ase object for the initial structure and a simulation object for further evaluation
-    # parameters["nqcd_simulation"]=simulation
-    # parameters["ase_object"]=ase_structure
-    # Add the number of times the termination callback was true for the number of desorption events. 
-    # parameters["desorption_trajectories"]=desorption_callback.desorption_trajectories
     return (results, parameters)
 end
 
