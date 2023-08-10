@@ -426,8 +426,8 @@ function langevin_dynamics(parameters::Dict{String,Any})
         results=traj
     end
     # Hand over an ase object for the initial structure and a simulation object for further evaluation
-    parameters["nqcd_simulation"]=simulation
-    parameters["ase_object"]=ase_structure
+    # parameters["nqcd_simulation"]=simulation
+    # parameters["ase_object"]=ase_structure
     return (results, parameters)
 end
 
