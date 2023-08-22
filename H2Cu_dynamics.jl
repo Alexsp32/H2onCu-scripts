@@ -549,6 +549,79 @@ function mdef_2tm(parameters)
     return (results, parameters)
 end
 
+"""
+    evaluate_trajectory_onlypositions(parameters)
 
+Evaluates total energy, forces and electronic friction tensor (if provided) for all structures in a trajectory. 
+"""
+function evaluate_trajectory_onlypositions(parameters)
+    @debug "Loading ase (Python)"
+    ase_io=pyimport("ase.io")
+    ase=pyimport("ase")
+    
+    # Import either an NQCD file with (NQCD output dict, sim parameters)
+    if haskey(parameters, "nqcd_input_file")
+        @debug "Importing trajectory from NQCD output"
+        ase_structure=ase_io.read(parameters["starting_structure"])
+        nqcd_file=jldopen(parameters["nqcd_input_file"])["results"]
+        trajectory=NQCDynamics.get_positions.(nqcd_file[1][:OutputDynamicsVariables])
+    elseif haskey(parameters, "xyz_input_file") # or an xyz file through ase. 
+        @debug "Importing trajectory from XYZ file"
+        ase_trj=ase_io.read(parameters["xyz_input_file"], index=":")
+        ase_structure=ase_trj[1]
+        nqcd_atoms, trajectory, nqcd_cell=NQCBase.convert_from_ase_atoms.(ase_trj)
+    end
+    # Initialise PES model
+    @debug "Initialising PES model"
+    nqcd_model=nothing
+    nqcd_model=set_potential_energy_surface(ase_structure, parameters) # Choose the desired ML model type and attach its calculator to ase_structure
+    if typeof(nqcd_model)==Nothing
+        # In this case, the ML method has modified ase_structure by attaching a calculator to it. 
+        nqcd_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
+    end
+    # Assign the chosen EFT model
+    @debug "Friction model needs to be initialised: $(haskey(parameters, "friction_atoms"))"
+    friction_model=haskey(parameters, "friction_atoms") ? set_friction_model(ase_structure, parameters) : nothing
+    # Combine models to CompositeFrictionModel
+    nqcd_model=isa(friction_model, Nothing) ? nqcd_model : CompositeFrictionModel(nqcd_model, friction_model)
+    # Generate temperature profile function
+    if haskey(parameters, "T_el_profile")
+        @debug "Initialising T_el profile"
+        T_el_profile=readdlm(parameters["T_el_profile"])
+        T_el_function(time_ps)=interpolate(T_el_profile[:,1], T_el_profile[:,2], BSplineOrder(3))(ustrip(u"ps", time_ps))*u"K" # Put T_el function in the right format for NQCD
+        parameters["T_el_function"]=T_el_function # Give the temperature profile in parameters for nice plotting. 
+    end
+    # Setup simulation
+    # Initialise NCQD Simulation
+    nqcd_atoms,positions,nqcd_cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
+    set_periodicity!(nqcd_cell,[true,true,true]) #? Is this actually necessary or already set?
+    @debug "Simulation initialising"
+    simulation=Simulation{MDEF}(
+        nqcd_atoms,
+        nqcd_model,
+        cell=nqcd_cell,
+        temperature=haskey(parameters, "temperature") ? parameters["temperature"] : T_el_function
+    )
+    @debug "Calculating energies"
+    energies=NQCModels.potential.(nqcd_model, trajectory)
+    @debug "Calculating forces"
+    forces=NQCModels.derivative.(nqcd_model, trajectory)
+    friction=[]
+    if haskey(parameters, "friction_atoms")
+        @debug "Calculating friction"
+        for configuration in trajectory
+            friction_conf=zeros(NQCModels.ndofs(nqcd_model)*length(simulation.atoms), NQCModels.ndofs(nqcd_model)*length(simulation.atoms))
+            NQCModels.friction!(nqcd_model, friction_conf, configuration)
+            push!(friction, friction_conf)
+        end
+    end
+    outputs=Dict(
+        "positions" => trajectory,
+        "energy" => energies,
+        "forces" => forces,
+        "friction" => length(friction)>0 ? friction : nothing,
+    )
+    return (outputs, parameters)
+end
 
     
