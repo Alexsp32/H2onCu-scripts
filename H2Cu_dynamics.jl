@@ -9,6 +9,7 @@ using Combinatorics
 using DataInterpolations
 using DelimitedFiles
 using DiatomicBasics
+using Dictionaries
 using DiffEqBase
 using Distributed
 using FrictionProviders
@@ -22,6 +23,7 @@ using NQCDynamics
 using NQCBase: NQCBase
 using NQCModels
 using Parameters
+using ProgressMeter
 using PyCall
 using Unitful
 using UnitfulAtomic
@@ -39,6 +41,34 @@ function driver(parameters)
 end
 
 #! Utility functions
+"""
+    all_distances(config::Any, sim::AbstractSimulation, species1, species2; args...)
+
+Iterate through all (PBC compliant) distances
+"""
+function all_distances(config::Any, sim::Simulation, species1, species2; args...)
+    # Generate unique combinations of atomic distances. 
+    if species1==species2
+        combinations=Combinatorics.combinations(findall(sim.atoms.types .== species1), 2) # Find all non-redundant 2 combinations of species1==species2 indices.
+    else
+        combinations=Iterators.product(findall(sim.atoms.types .== species1), findall(sim.atoms.types .== species2)) # Find all non-redundant combinations of species1 != species2 indices. 
+    end
+    # Distance iterator exists now. 
+    pbc_distances=[]
+    @showprogress "Evaluating distances" for combination in combinations
+        push!(pbc_distances, DiatomicBasics.pbc_distance(config, combination..., sim; args...))
+    end
+    return pbc_distances
+end
+
+function all_distances(trj::Vector, sim::Simulation, species1, species2; args...)
+    pbc_distances=[]
+    @showprogress "Snapshot" for config in trj
+        vcat(pbc_distances, all_distances(config, sim, species1, species2; args...))
+    end
+    return pbc_distances
+end
+
 function pbc_neighbour_positions(positions::Any, index::Int, distance_in_au, simulation::NQCDynamics.AbstractSimulation)
     distances=map(x->pbc_distance(positions, index, x, simulation), collect(1:length(simulation.atoms)))
     neighbours=findall(x->x≤auconvert(u"Å",distance_in_au) && x!=0.0u"Å", distances)
@@ -243,10 +273,10 @@ end
 TBW
 """
 function load_reann_model!(ase_structure, parameters)
-    reann=pyimport("ase.calculators.reann") # ToDo: I still need to install this!
+    reann=pyimport("ase.calculators.reann")
     pbc=[1,1,1] # Periodic boundary conditions
     model_path=haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"]
-    reann_calc=reann.REANN(device="cpu", atomtype=unique(ase_structure.get_chemical_symbols()), period=pbc, nn=model_path)
+    reann_calc=reann.REANN(device="cpu", atomtype=parameters["REANN_atom_types"], period=pbc, nn=model_path)
     ase_structure.set_calculator(reann_calc)
     return nothing
 end
