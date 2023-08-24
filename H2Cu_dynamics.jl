@@ -36,17 +36,53 @@ function driver(parameters)
         results=langevin_dynamics(parameters)
     elseif parameters["task"]=="mdef+2tm"
         results=mdef_2tm(parameters)
+    elseif parameters["task"]=="montecarlo"
+        results=thermal_montecarlo(parameters)
     end
     return results
 end
 
 #! Utility functions
+function generate_angle_triplets(config::Any, sim::Simulation, species1, species2, species3;args...)
+    # We need to distinguish four cases: 
+    if species1==species2==species3
+        # Here we are interested in three unique permutations per combination of three indices. 
+        combinations=collect(combinations(findall(sim.atoms.types .== species1), 3))
+        permutations=collect.(permutations.(combinations, 3)) # This includes reversions
+        permutations=map(x->x[begin:3], permutations)
+        triplets=map(x->vcat(x...), permutations)
+        return triplets
+    elseif species1!=species2!=species3
+        # In this case, we need to look at all combinations of species1-species2-species3 triplets
+        triplets=collect(Base.product(findall(sim.atoms.types .== species1), findall(sim.atoms.types .== species2), findall(sim.atoms.types .== species3)))
+        return vec(map(x->vcat(x...), triplets))
+    elseif species1==species2
+        # Now we need to consider permutations of species1 & 2 combined with species3
+        species1_permutations=permutations(findall(sim.atoms.types .== species1), 2)
+        combinations=Base.product(species1_permutations, findall(sim.atoms.types .== species3))
+        triplets=map(x->vcat(x...), collect(combinations))
+        return vec(triplets)
+    elseif species2==species3
+        # Same as above, but with different indices
+        species2_permutations=permutations(findall(sim.atoms.types .== species2), 2)
+        combinations=Base.product(findall(sim.atoms.types .== species1), species2_permutations)
+        triplets=map(x->vcat(x...), collect(combinations))
+        return vec(triplets)
+    elseif species1==species3
+        # Same as above
+        species1_permutations=permutations(findall(sim.atoms.types .== species1), 2)
+        combinations=Base.product(species1_permutations, findall(sim.atoms.types .== species2))
+        triplets=map(x->[x[1][1], x[2], x[1][2]], collect(combinations))
+        return vec(triplets)
+    end
+end
+
 """
     all_distances(config::Any, sim::AbstractSimulation, species1, species2; args...)
 
 Iterate through all (PBC compliant) distances
 """
-function all_distances(config::Any, sim::Simulation, species1, species2; args...)
+function all_distances(config::Any, sim::Simulation, species1, species2; r_cut=10.0u"Å", args...)
     # Generate unique combinations of atomic distances. 
     if species1==species2
         combinations=Combinatorics.combinations(findall(sim.atoms.types .== species1), 2) # Find all non-redundant 2 combinations of species1==species2 indices.
@@ -55,16 +91,19 @@ function all_distances(config::Any, sim::Simulation, species1, species2; args...
     end
     # Distance iterator exists now. 
     pbc_distances=[]
-    @showprogress "Evaluating distances" for combination in combinations
-        push!(pbc_distances, DiatomicBasics.pbc_distance(config, combination..., sim; args...))
+    for combination in combinations
+        dist=DiatomicBasics.pbc_distance(config, combination..., sim; args...)
+        if dist<r_cut
+            push!(pbc_distances, dist)
+        end
     end
     return pbc_distances
 end
 
 function all_distances(trj::Vector, sim::Simulation, species1, species2; args...)
     pbc_distances=[]
-    @showprogress "Snapshot" for config in trj
-        vcat(pbc_distances, all_distances(config, sim, species1, species2; args...))
+    for config in trj
+        pbc_distances=vcat(pbc_distances, all_distances(config, sim, species1, species2; args...))
     end
     return pbc_distances
 end
@@ -461,16 +500,19 @@ function langevin_dynamics(parameters::Dict{String,Any})
     return (results, parameters)
 end
 
-function mh_montecarlo(parameters)
+function thermal_montecarlo(parameters)
     # Prepare Python packages
     ase_io=pyimport("ase.io")
     ase=pyimport("ase")
     # Load structure
     ase_structure=ase_io.read(parameters["starting_structure"]) # Assuming ASE will recognise the format.
-    # Choose type of ML model (SchNet only for now) and load it
-    # ToDo: Handle PES models that aren't an ASE calculator
-    set_potential_energy_surface(ase_structure, parameters) # Choose the desired ML model type and attach its calculator to ase_structure
-    nqcd_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
+    # Initialise PES model
+    nqcd_model=nothing
+    nqcd_model=set_potential_energy_surface(ase_structure, parameters) # Choose the desired ML model type and attach its calculator to ase_structure
+    if typeof(nqcd_model)==Nothing
+        # In this case, the ML method has modified ase_structure by attaching a calculator to it. 
+        nqcd_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
+    end
     nqcd_atoms,positions,nqcd_cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
     set_periodicity!(nqcd_cell,[true,true,true]) #? Is this actually necessary or already set?
     simulation=Simulation{Classical}(
@@ -479,25 +521,31 @@ function mh_montecarlo(parameters)
         temperature=get!(parameters, "temperature", 300u"K"),
         cell=nqcd_cell
     )
-    #=
-    # ToDo: Find out if I can use a newer method or if model constraints won't allow that.  
+    # Check if constraints are active. If so, create a copy of Atoms, where frozen atoms are of type :X
+    frozen_atoms=nqcd_atoms
+    if haskey(parameters, "fixed_atoms")
+        # Manually set frozen atoms (separate constraint to ase)
+        frozen_atoms.types[parameters["fixed_atoms"]].=:X
+    else
+        # Try to automatically set frozen atoms (copy ase constraint)
+        if length(ase_structure.constraints)!=0
+            frozen_atoms.types[ase_structure.constraints[1].get_indices().+1].=:X
+        end
+    end
+    frozen_simulation=Simulation(frozen_atoms, nqcd_model, temperature=get!(parameters, "temperature", 300u"K"),cell=nqcd_cell)
+    step_sizes=Dict(
+        :H => get!(parameters, "MC_stepsize_H", 0.05),
+        :Cu => get!(parameters, "MC_stepsize_Cu", 0.1),
+        :X => 0.0,
+    )
+    # Now start MC sampling
     mc_chain=InitialConditions.ThermalMonteCarlo.run_advancedmh_sampling(
-        simulation,
-        positions,
-        get!(parameters, "mc_steps", 10000), 
-        get!(parameters, "mc_stepsize", Dict(:H => 0.6, :Cu => 0.4));
-
+        frozen_simulation, # Simulation to run HMC sampling with
+        positions, # Initial configuration
+        get!(parameters, "MC_steps", 10), # Number of MonteCarlo steps to do. 
+        step_sizes; # Step sizes per atom species. 
+        move_ratio=get!(parameters, "MC_move_ratio", 0.0)
     )
-    =#
-    mc_chain=InitialConditions.MetropolisHastings.run_monte_carlo_sampling(
-        simulation,
-        positions,
-        get!(parameters, "mc_stepsize", Dict(:H => 0.6, :Cu => 0.4)),
-        get!(parameters, "mc_steps", 10000);
-        fix=parameters["mc_fixed"]
-    )
-    parameters["nqcd_simulation"]=simulation
-    parameters["ase_object"]=ase_structure
     return(mc_chain, parameters)
 end
 
