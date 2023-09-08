@@ -346,7 +346,7 @@ TBW
 """
 function load_mace_model!(ase_structure, parameters)
     mace_calc=pyimport("mace.calculators")
-    mace_calculator=mace_calc.MACECalculator(model_path=parameters["model_path"], device=get!(parameters, "mace_devicetype", "cpu"))
+    mace_calculator=mace_calc.MACECalculator(model_path=haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"], device=get!(parameters, "mace_devicetype", "cpu"))
     ase_structure.set_calculator(mace_calculator)
     return nothing
 end
@@ -647,7 +647,13 @@ function evaluate_trajectory_onlypositions(parameters)
         @debug "Importing trajectory from XYZ file"
         ase_trj=ase_io.read(parameters["xyz_input_file"], index=":")
         ase_structure=ase_trj[1]
-        nqcd_atoms, trajectory, nqcd_cell=NQCBase.convert_from_ase_atoms.(ase_trj)
+        nqcd_atoms, trajectory, nqcd_cell=[],[],[]
+        for geometry in ase_trj
+            atoms, positions, cell=NQCBase.convert_from_ase_atoms(geometry)
+            push!(nqcd_atoms, atoms)
+            push!(trajectory, positions)
+            push!(nqcd_cell, cell)
+        end
     end
     # Initialise PES model
     @debug "Initialising PES model"
@@ -671,13 +677,13 @@ function evaluate_trajectory_onlypositions(parameters)
     end
     # Setup simulation
     # Initialise NCQD Simulation
-    nqcd_atoms,positions,nqcd_cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
-    set_periodicity!(nqcd_cell,[true,true,true]) #? Is this actually necessary or already set?
+    simulation_atoms,positions,simulation_cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
+    set_periodicity!(simulation_cell,[true,true,true]) #? Is this actually necessary or already set?
     @debug "Simulation initialising"
     simulation=Simulation{MDEF}(
-        nqcd_atoms,
+        simulation_atoms,
         nqcd_model,
-        cell=nqcd_cell,
+        cell=simulation_cell,
         temperature=haskey(parameters, "temperature") ? parameters["temperature"] : T_el_function
     )
     @debug "Calculating energies"
@@ -687,7 +693,7 @@ function evaluate_trajectory_onlypositions(parameters)
     friction=[]
     if haskey(parameters, "friction_atoms")
         @debug "Calculating friction"
-        for configuration in trajectory
+        @showprogress "Friction" for configuration in trajectory
             friction_conf=zeros(NQCModels.ndofs(nqcd_model)*length(simulation.atoms), NQCModels.ndofs(nqcd_model)*length(simulation.atoms))
             NQCModels.friction!(nqcd_model, friction_conf, configuration)
             push!(friction, friction_conf)
