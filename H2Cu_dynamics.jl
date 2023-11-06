@@ -350,6 +350,19 @@ function load_mace_model!(ase_structure, parameters)
     ase_structure.set_calculator(mace_calculator)
     return nothing
 end
+
+"""
+    load_mace_models!(ase_structure, parameters)
+    
+    MACE model loader with support for model committees in newer versions of mace. 
+
+"""
+function load_mace_models!(ase_structure, parameters)
+    mace_calc=pyimport("mace.calculators")
+    mace_calculator=mace_calc.MACECalculator(model_paths=haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"], device=get!(parameters, "mace_devicetype", "cpu"))
+    ase_structure.set_calculator(mace_calculator)
+    return nothing
+end
     
 function EFT_LDFA_cube_model(ase_structure, parameters)
     nqcd_atoms, nqcd_positions, nqcd_cell=NQCBase.convert_from_ase_atoms(ase_structure)
