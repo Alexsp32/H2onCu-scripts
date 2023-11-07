@@ -245,8 +245,10 @@ function set_potential_energy_surface(ase_structure, parameters)
         load_schnet_model!(ase_structure, parameters)
     elseif method=="mace"
         load_mace_model!(ase_structure, parameters)
-    elseif method=="mace_committee"
-        load_mace_models!(ase_structure, parameters)
+    elseif method=="mace_nov23"
+        load_nov23_mace_model!(ase_structure, parameters)
+    elseif method=="mace_nov23_committee"
+        load_nov23_mace_models!(ase_structure, parameters)
     elseif method=="ace"
         load_ace_model!(ase_structure, parameters)
     elseif method=="painn"
@@ -343,7 +345,7 @@ end
 """
     load_mace_model!(ase_structure, parameters)
     
-    MACE model loader
+    MACE 0.1.0 model loader
 TBW
 """
 function load_mace_model!(ase_structure, parameters)
@@ -354,14 +356,27 @@ function load_mace_model!(ase_structure, parameters)
 end
 
 """
-    load_mace_models!(ase_structure, parameters)
+    load_mace_model!(ase_structure, parameters)
     
-    MACE model loader with support for model committees in newer versions of mace. 
+    MACE 0.2.0 as of Nov 2023 model loader
+TBW
+"""
+function load_nov23_mace_model!(ase_structure, parameters)
+    mace_calc=pyimport("mace.calculators")
+    mace_calculator=mace_calc.MACECalculator(model_paths=haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"], device=get!(parameters, "mace_devicetype", "cpu"), default_dtype="float32")
+    ase_structure.set_calculator(mace_calculator)
+    return nothing
+end
 
 """
-function load_mace_models!(ase_structure, parameters)
+    load_mace_models!(ase_structure, parameters)
+    
+    MACE 0.2.0 as of Nov 2023 model loader with support for model committees in newer versions of mace. 
+
+"""
+function load_nov23_mace_models!(ase_structure, parameters)
     mace_calc=pyimport("mace.calculators")
-    mace_calculator=mace_calc.MACECalculator(model_paths=haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"], device=get!(parameters, "mace_devicetype", "cpu"))
+    mace_calculator=mace_calc.MACECalculator(model_paths=haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"], device=get!(parameters, "mace_devicetype", "cpu"), default_dtype="float32")
     ase_structure.set_calculator(mace_calculator)
     return nothing
 end
