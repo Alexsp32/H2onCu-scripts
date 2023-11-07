@@ -460,29 +460,11 @@ end
 
 #! Dynamics functions
 function langevin_dynamics(parameters::Dict{String,Any})
-    # Prepare Python packages
-    ase_io=pyimport("ase.io")
-    ase=pyimport("ase")
-    # Load structure
-    ase_structure=ase_io.read(parameters["starting_structure"]) # Assuming ASE will recognise the format.
-    # Initialise PES model
-    nqcd_model=nothing
-    nqcd_model=set_potential_energy_surface(ase_structure, parameters) # Choose the desired ML model type and attach its calculator to ase_structure
-    if typeof(nqcd_model)==Nothing
-        # In this case, the ML method has modified ase_structure by attaching a calculator to it. 
-        nqcd_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
-    end
-    # Initialise NCQD Simulation
-    nqcd_atoms,positions,nqcd_cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
-    set_periodicity!(nqcd_cell,[true,true,true]) #? Is this actually necessary or already set?
-    simulation=Simulation{Langevin}(
-        nqcd_atoms, 
-        nqcd_model; 
-        temperature=get!(parameters, "temperature", 300u"K"),
-        γ=get!(parameters, "gamma", 0.5),
-        cell=nqcd_cell,
-        #extra_args...
+    # Simulation initialisation
+    sim_kwargs=Dict{Symbol, Any}(
+        :γ => get!(parameters, "gamma", 0.5)
     )
+    simulation, atoms, positions, cell=initialise_simulation(parameters; method=Langevin, sim_kwargs=sim_kwargs)
     # Let's try freezing atoms (lowest layers of Cu) by setting their sigma=0 in addition to the 0 forces from the AdiabaticASEModel
     if haskey(parameters, "fixed_atoms")
         # Manually set frozen atoms (separate constraint to ase)
@@ -524,35 +506,14 @@ function langevin_dynamics(parameters::Dict{String,Any})
     else
         results=traj
     end
-    # Hand over an ase object for the initial structure and a simulation object for further evaluation
-    # parameters["nqcd_simulation"]=simulation
-    # parameters["ase_object"]=ase_structure
     return (results, parameters)
 end
 
 function thermal_montecarlo(parameters)
-    # Prepare Python packages
-    ase_io=pyimport("ase.io")
-    ase=pyimport("ase")
-    # Load structure
-    ase_structure=ase_io.read(parameters["starting_structure"]) # Assuming ASE will recognise the format.
-    # Initialise PES model
-    nqcd_model=nothing
-    nqcd_model=set_potential_energy_surface(ase_structure, parameters) # Choose the desired ML model type and attach its calculator to ase_structure
-    if typeof(nqcd_model)==Nothing
-        # In this case, the ML method has modified ase_structure by attaching a calculator to it. 
-        nqcd_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
-    end
-    nqcd_atoms,positions,nqcd_cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
-    set_periodicity!(nqcd_cell,[true,true,true]) #? Is this actually necessary or already set?
-    simulation=Simulation{Classical}(
-        nqcd_atoms, 
-        nqcd_model, 
-        temperature=get!(parameters, "temperature", 300u"K"),
-        cell=nqcd_cell
-    )
+    sim_kwargs=Dict{Symbol, Any}(:temperature => get!(parameters, "temperature", 300u"K"))
+    simulation, atoms, positions, cell=initialise_simulation(parameters; method=Classical, sim_kwargs=sim_kwargs)
     # Check if constraints are active. If so, create a copy of Atoms, where frozen atoms are of type :X
-    frozen_atoms=nqcd_atoms
+    frozen_atoms=atoms
     if haskey(parameters, "fixed_atoms")
         # Manually set frozen atoms (separate constraint to ase)
         frozen_atoms.types[parameters["fixed_atoms"]].=:X
@@ -562,7 +523,7 @@ function thermal_montecarlo(parameters)
             frozen_atoms.types[ase_structure.constraints[1].get_indices().+1].=:X
         end
     end
-    frozen_simulation=Simulation(frozen_atoms, nqcd_model, temperature=get!(parameters, "temperature", 300u"K"),cell=nqcd_cell)
+    frozen_simulation=Simulation(frozen_atoms, nqcd_model, temperature=parameters["temperature"],cell=cell)
     step_sizes=Dict(
         :H => get!(parameters, "MC_stepsize_H", 0.05),
         :Cu => get!(parameters, "MC_stepsize_Cu", 0.1),
@@ -586,37 +547,8 @@ function mdef_2tm(parameters)
     else
         nqcd_distribution=jldopen(parameters["initial_conditions_file"])["nqcd_distribution"]
     end
-    # Create an AdiabaticASEModel for the base slab
-    ase_io=pyimport("ase.io")
-    ase=pyimport("ase")
-    ase_structure=ase_io.read(parameters["starting_structure"])
-    # Initialise PES model
-    nqcd_model=nothing
-    nqcd_model=set_potential_energy_surface(ase_structure, parameters) # Choose the desired ML model type and attach its calculator to ase_structure
-    if typeof(nqcd_model)==Nothing
-        # In this case, the ML method has modified ase_structure by attaching a calculator to it. 
-        nqcd_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
-    end
-    # Assign the chosen EFT model
-    friction_model=set_friction_model(ase_structure, parameters)
-    # Combine models to CompositeFrictionModel
-    nqcd_model=CompositeFrictionModel(nqcd_model, friction_model)
-    # Generate temperature profile function
-    if haskey(parameters, "T_el_profile")
-        T_el_profile=readdlm(parameters["T_el_profile"])
-        T_el_function(time_ps)=interpolate(T_el_profile[:,1], T_el_profile[:,2], BSplineOrder(3))(ustrip(u"ps", time_ps))*u"K" # Put T_el function in the right format for NQCD
-        parameters["T_el_function"]=T_el_function # Give the temperature profile in parameters for nice plotting. 
-    end
-    # Setup simulation and termination condition. 
-    # Initialise NCQD Simulation
-    nqcd_atoms,positions,nqcd_cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
-    set_periodicity!(nqcd_cell,[true,true,true]) #? Is this actually necessary or already set?
-    simulation=Simulation{MDEF}(
-        nqcd_atoms,
-        nqcd_model,
-        cell=nqcd_cell,
-        temperature=haskey(parameters, "temperature") ? parameters["temperature"] : T_el_function
-    )
+    
+    simulation, atoms, positions, cell=initialise_simulation(parameters; method=MDEF)
     desorption_callback=DesorptionTerminator(friction_model.friction_atoms, parameters["Cu_toplayer_indices"], parameters["desorption_min_surface_distance"], 0, simulation)
     terminate_callback=DynamicsUtils.TerminatingCallback(desorption_callback)
     # Run desorption simulations
@@ -666,7 +598,7 @@ function evaluate_trajectory_onlypositions(parameters)
     @debug "Loading ase (Python)"
     ase_io=pyimport("ase.io")
     ase=pyimport("ase")
-    
+    # ToDo: Update for new initialise_simulation function. 
     # Import either an NQCD file with (NQCD output dict, sim parameters)
     if haskey(parameters, "nqcd_input_file")
         @debug "Importing trajectory from NQCD output"
@@ -716,6 +648,7 @@ function evaluate_trajectory_onlypositions(parameters)
         cell=simulation_cell,
         temperature=haskey(parameters, "temperature") ? parameters["temperature"] : T_el_function
     )
+    
     @debug "Calculating energies"
     energies=NQCModels.potential.(nqcd_model, trajectory)
     @debug "Calculating forces"
@@ -738,4 +671,43 @@ function evaluate_trajectory_onlypositions(parameters)
     return (outputs, parameters)
 end
 
+function initialise_simulation(parameters::Dict{String, Any}; method::Type=Classical, sim_kwargs=Dict{Symbol, Any}())
+    @debug "Loading ase (Python)"
+    ase_io=pyimport("ase.io")
+    ase=pyimport("ase")
+    ase_structure=ase_io.read(parameters["starting_structure"])
+    # Initialise PES model
+    @debug "Loading PES model"
+    nqcd_model=nothing
+    nqcd_model=set_potential_energy_surface(ase_structure, parameters) # Choose the desired ML model type and attach its calculator to ase_structure
+    if typeof(nqcd_model)==Nothing
+        # In this case, the ML method has modified ase_structure by attaching a calculator to it. 
+        nqcd_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
+    end
+    @debug "Assigning friction model if friction_atoms is set"
+    # Assign the chosen EFT model if friction_atoms are set. 
+    friction_model=haskey(parameters, "friction_atoms") ? set_friction_model(ase_structure, parameters) : nothing
+    @debug "Combining PES+Friction models if necessary"
+    # Combine models to CompositeFrictionModel
+    nqcd_model=isa(friction_model, Nothing) ? nqcd_model : CompositeFrictionModel(nqcd_model, friction_model)
+    @debug "Reading T_el profile if necessary"
+    # Generate temperature profile function
+    if haskey(parameters, "T_el_profile")
+        T_el_profile=readdlm(parameters["T_el_profile"])
+        T_el_function(time_ps)=interpolate(T_el_profile[:,1], T_el_profile[:,2], BSplineOrder(3))(ustrip(u"ps", time_ps))*u"K" # Put T_el function in the right format for NQCD
+        parameters["T_el_function"]=T_el_function # Give the temperature profile in parameters for nice plotting. 
+    end
+    # Setup simulation and termination condition. 
+    # Initialise NCQD Simulation
+    atoms,initial_positions,cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
+    set_periodicity!(cell,[true,true,true]) #? Is this actually necessary or already set?
+    sim_kwargs[:cell]=cell
+    sim_kwargs[:temperature]=haskey(parameters, "temperature") ? parameters["temperature"] : T_el_function
+    simulation=Simulation{method}(
+        atoms,
+        nqcd_model;
+        sim_kwargs...
+    )
+    return simulation, atoms, initial_positions, cell
+end
     
