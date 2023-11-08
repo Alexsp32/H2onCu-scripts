@@ -607,6 +607,7 @@ function evaluate_energies_forces_friction(position_trajectory::Vector, paramete
         end
     end
     outputs=Dict(
+        "positions" => position_trajectory,
         "energy" => energies,
         "forces" => forces,
         "friction" => length(friction)>0 ? friction : nothing,
