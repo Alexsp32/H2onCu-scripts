@@ -27,20 +27,20 @@ model_paths=[
 ]
 
 # Push all positions into a single array
-positions=mapreduce(x->get_positions.(x[:OutputDynamicsVariables]), vcat, trajectory_file[1])
+positions=mapreduce(x->NQCDynamics.get_positions.(x[:OutputDynamicsVariables]), vcat, trajectory_file[1])
 
 @everywhere begin
     include("/Users/u5529589/Documents/H2onCu/scripts/H2Cu_dynamics.jl")
     using SharedArrays
 end
 
-positions_shared=convert(SharedArray{Float64}, positions)
+positions_shared=convert.(SharedArray{Float64}, positions)
+parameters=[merge(simulation_parameters, Dict("model_path" => path)) for path in model_paths]
 
 # Load models and evaluate potentials
-outputs=@showprogress pmap(x->evaluate_energies_forces_friction(positions_shared, x), [merge(simulation_parameters, Dict("model_path" => path)) for path in model_paths])
+outputs=@showprogress pmap(x->evaluate_energies_forces_friction(positions_shared, x), parameters)
 
 # Energy errors
 energy=hcat([output["energy"] for output in outputs])
-
 
 jldsave("test_output.jld2", results=outputs)
