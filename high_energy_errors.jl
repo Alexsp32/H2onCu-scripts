@@ -42,5 +42,11 @@ outputs=@showprogress pmap(x->evaluate_energies_forces_friction(positions_shared
 
 # Energy errors
 energy=hcat([output["energy"] for output in outputs])
+energy_var=var(energy; dims=2)
+forces_full=[cat([output["forces"][i] for output in outputs]...; dims=3) for i in eachindex(outputs[1]["forces"])]
+forces_var=map(x->dropdims(var(x; dims=3);dims=3), forces_full)
 
+
+outputs["forces_var"]=forces_var
+outputs["energy_var"]=energy_var
 jldsave("test_output.jld2", results=outputs)
