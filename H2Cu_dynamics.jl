@@ -589,7 +589,7 @@ function mdef_2tm(parameters)
     return (results, parameters)
 end
 
-function evaluate_energies_forces_friction(position_trajectory::Vector, parameters::Dict{String, Any})
+function evaluate_energies_forces_friction(position_trajectory, parameters::Dict{String, Any})
     sim, atoms, positions, cell=initialise_simulation(parameters; method=haskey(parameters, "friction_atoms") ? MDEF : Classical)
     energies=Float64[]
     forces=Matrix{Float64}[]
@@ -607,7 +607,7 @@ function evaluate_energies_forces_friction(position_trajectory::Vector, paramete
         end
     end
     outputs=Dict(
-        "positions" => position_trajectory,
+        "positions" => convert.(Matrix{Float64}, position_trajectory),
         "energy" => energies,
         "forces" => forces,
         "friction" => length(friction)>0 ? friction : nothing,
