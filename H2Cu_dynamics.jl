@@ -468,11 +468,11 @@ function langevin_dynamics(parameters::Dict{String,Any})
     # Let's try freezing atoms (lowest layers of Cu) by setting their sigma=0 in addition to the 0 forces from the AdiabaticASEModel
     if haskey(parameters, "fixed_atoms")
         # Manually set frozen atoms (separate constraint to ase)
-        simulation.method.σ[[CartesianIndex(i) for i in Iterators.product(collect(NQCModels.dofs(nqcd_model)), parameters["fixed_atoms"])]].=0.0
+        simulation.method.σ[[CartesianIndex(i) for i in Iterators.product(collect(NQCModels.dofs(simulation.calculator.model)), parameters["fixed_atoms"])]].=0.0
     else
         # Try to automatically set frozen atoms (copy ase constraint)
-        if length(ase_structure.constraints)!=0
-            simulation.method.σ[[CartesianIndex(i...) for i in Iterators.product(collect(NQCModels.dofs(nqcd_model)), ase_structure.constraints[1].get_indices().+1)]].=0
+        if length(simulation.calculator.model.atoms.constraints)!=0
+            simulation.method.σ[[CartesianIndex(i...) for i in Iterators.product(collect(NQCModels.dofs(simulation.calculator.model)), simulation.calculator.model.atoms.constraints[1].get_indices().+1)]].=0
         end
     end
     # Starting conditions: initial positions and zero velocity
