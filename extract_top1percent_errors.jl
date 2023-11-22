@@ -39,7 +39,7 @@ println(input_file["energy_var"][1])
 
 if !haskey(input_file, "forces_var")
     @info "Building force variance since it wasn't present in $(ARGS[1])"
-    forces_full=[cat([output["forces"][i] for output in trajectory]...; dims=3) for i in eachindex(outputs[1]["forces"])]
+    forces_full=[cat([output["forces"][i] for output in trajectory]...; dims=3) for i in eachindex(trajectory[1]["forces"])]
     forces_var=map(x->dropdims(var(x; dims=3);dims=3), forces_full)
     input_file["forces_var"]=forces_var
 end
