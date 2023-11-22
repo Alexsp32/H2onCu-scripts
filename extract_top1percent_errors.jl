@@ -1,6 +1,6 @@
 include("H2Cu_dynamics.jl")
 
-input_file=jldopen(ARGS[1], "a")
+input_file=jldopen(ARGS[1], "r+")
 output_filename=ARGS[2]
 
 threshold=0.01 # Pick the top 1% of errors
@@ -32,7 +32,10 @@ if !haskey(input_file, "energy_var")
     input_file["energy_var"]=energy_var
 elseif length(size(input_file["energy_var"]))==2 # Flatten if 2D
     @info "Flattening energy variance since it was multidimensional."
-    input_file["energy_var"]=input_file["energy_var"][:]
+    new_energy_var=input_file["energy_var"][:]
+    jldsave(replace(ARGS[1], ".jld2" => "_new.jld2"); results=input_file["results"], parameters=input_file["parameters"], energy_var=new_energy_var, forces_var=input_file["forces_var"])
+    input_file=jldopen(replace(ARGS[1], ".jld2" => "_new.jld2"), "a")
+    @warn "Flattened energy variance and wrote a new output file to $(replace(ARGS[1], ".jld2" => "_new.jld2"))"
 end
 
 println(input_file["energy_var"][1])
@@ -79,15 +82,13 @@ output_trj1=NQCBase.convert_to_ase_atoms(base_Atoms, top1percent_energy["positio
 output_trj2=NQCBase.convert_to_ase_atoms(base_Atoms, top1percent_forces["positions"], base_Cell)
 output_trj3=NQCBase.convert_to_ase_atoms(base_Atoms, top1percent_H2only["positions"], base_Cell)
 
-@info "Adding additional properties"
-for set in zip([top1percent_energy, top1percent_forces, top1percent_H2only], [output_trj1, output_trj2, output_trj3])
+@info "Adding additional properties and writing output"
+databases=[top1percent_energy, top1percent_forces, top1percent_H2only]
+outputs=[output_trj1, output_trj2, output_trj3]
+names=["$(output_filename)_top1percent_energy_var.xyz", "$(output_filename)_top1percent_forces_var.xyz","$(output_filename)_top1percent_h2forces_var.xyz"]
+for set in zip(databases, outputs, names)
     for i in eachindex(set[2])
-        set[2][i].info["energy_var"]=set[1]["energy_errors"][i]
-        set[2][i].info["forces_var"]=set[1]["force_errors"][i]
+        set[2][i].info=PyDict(Dict("energy_var" => set[1]["energy_errors"][i],"forces_var" => sum(set[1]["force_errors"][i])))
     end
+    ase_io.write(set[3], set[2])
 end
-
-@info "Writing outputs"
-ase_io.write("$(output_filename)_top1percent_energy_var.xyz", output_trj1)
-ase_io.write("$(output_filename)_top1percent_forces_var.xyz", output_trj2)
-ase_io.write("$(output_filename)_top1percent_h2forces_var.xyz", output_trj3)
