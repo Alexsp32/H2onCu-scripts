@@ -10,3 +10,4 @@
 !Manifest.toml
 !readme.md
 !high_energy_errors.jl
+!extract_top1percent_errors.jl
