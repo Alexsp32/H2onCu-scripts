@@ -513,14 +513,14 @@ function thermal_montecarlo(parameters)
     sim_kwargs=Dict{Symbol, Any}(:temperature => get!(parameters, "temperature", 300u"K"))
     simulation, atoms, positions, cell=initialise_simulation(parameters; method=Classical, sim_kwargs=sim_kwargs)
     # Check if constraints are active. If so, create a copy of Atoms, where frozen atoms are of type :X
-    frozen_atoms=atoms
+    frozen_atoms=simulation.calculator.model.atoms
     if haskey(parameters, "fixed_atoms")
         # Manually set frozen atoms (separate constraint to ase)
         frozen_atoms.types[parameters["fixed_atoms"]].=:X
     else
         # Try to automatically set frozen atoms (copy ase constraint)
-        if length(ase_structure.constraints)!=0
-            frozen_atoms.types[ase_structure.constraints[1].get_indices().+1].=:X
+        if length(simulation.calculator.model.atoms.constraints)!=0
+            frozen_atoms.types[simulation.calculator.model.atoms.constraints[1].get_indices().+1].=:X
         end
     end
     frozen_simulation=Simulation(frozen_atoms, nqcd_model, temperature=parameters["temperature"],cell=cell)
