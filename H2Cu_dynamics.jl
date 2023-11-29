@@ -523,7 +523,7 @@ function thermal_montecarlo(parameters)
             frozen_atoms.types[simulation.calculator.model.atoms.constraints[1].get_indices().+1].=:X
         end
     end
-    frozen_simulation=Simulation(frozen_atoms, nqcd_model, temperature=parameters["temperature"],cell=cell)
+    frozen_simulation=Simulation(frozen_atoms, simulation.calculator.model, temperature=parameters["temperature"],cell=cell)
     step_sizes=Dict(
         :H => get!(parameters, "MC_stepsize_H", 0.05),
         :Cu => get!(parameters, "MC_stepsize_Cu", 0.1),
