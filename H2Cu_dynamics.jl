@@ -513,17 +513,15 @@ function thermal_montecarlo(parameters)
     sim_kwargs=Dict{Symbol, Any}(:temperature => get!(parameters, "temperature", 300u"K"))
     simulation, atoms, positions, cell=initialise_simulation(parameters; method=Classical, sim_kwargs=sim_kwargs)
     # Check if constraints are active. If so, create a copy of Atoms, where frozen atoms are of type :X
-    frozen_atoms=atoms
     if haskey(parameters, "fixed_atoms")
         # Manually set frozen atoms (separate constraint to ase)
-        frozen_atoms.types[parameters["fixed_atoms"]].=:X
+        simulation.atoms.types[parameters["fixed_atoms"]].=:X
     else
         # Try to automatically set frozen atoms (copy ase constraint)
         if length(simulation.calculator.model.atoms.constraints)!=0
-            frozen_atoms.types[simulation.calculator.model.atoms.constraints[1].get_indices().+1].=:X
+            simulation.atoms.types[simulation.calculator.model.atoms.constraints[1].get_indices().+1].=:X
         end
     end
-    frozen_simulation=Simulation(frozen_atoms, simulation.calculator.model, temperature=parameters["temperature"],cell=cell)
     step_sizes=Dict(
         :H => get!(parameters, "MC_stepsize_H", 0.05),
         :Cu => get!(parameters, "MC_stepsize_Cu", 0.1),
@@ -531,11 +529,11 @@ function thermal_montecarlo(parameters)
     )
     # Now start MC sampling
     mc_chain=InitialConditions.ThermalMonteCarlo.run_advancedmh_sampling(
-        frozen_simulation, # Simulation to run HMC sampling with
+        simulation, # Simulation to run HMC sampling with
         positions, # Initial configuration
         get!(parameters, "MC_steps", 10), # Number of MonteCarlo steps to do. 
         step_sizes; # Step sizes per atom species. 
-        move_ratio=get!(parameters, "MC_move_ratio", 0.0)
+        movement_ratio=get!(parameters, "MC_movement_ratio", 0.0)
     )
     return(mc_chain, parameters)
 end
