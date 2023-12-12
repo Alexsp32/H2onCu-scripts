@@ -21,7 +21,7 @@ function surface_coverage_diagram(structure::String, trajectory::String, h_atoms
 	atoms_to_draw::Union{Vector, CartesianIndices, UnitRange}=(54-18):54, 
 	padding=1.5, 
 	cu_marker_size=100, 
-	n_atoms_per_layer=9,
+	n_atoms_per_layer::Int=9,
 	alpha_max=0.75
 	)
 	ase_io=pyimport("ase.io")
@@ -50,16 +50,17 @@ function surface_coverage_diagram(structure::String, trajectory::String, h_atoms
 	atoms_ax=Axis(f1[1,1], xlabel="X coordinate / Å", ylabel="Y coordinate / Å", xminorticksvisible=true, yminorticksvisible=true)
 	H_density=heatmap!(xy_kde.x, xy_kde.y, xy_kde.density; colormap=:inferno, alpha=1.0)
 	layers_to_draw=ceil(length(atoms_to_draw)/n_atoms_per_layer) # Number of layers we need. 
-	alpha=reverse(collect(0.0:alpha_max/layers_to_draw:alpha_max)) # Fading intensity
+	alpha=reverse(collect(0.0:(alpha_max/layers_to_draw):alpha_max)) # Fading intensity
 	# Draw surface atoms in background
-	for i in 1:layers_to_draw
-		scatter!(starting_positions[1:2,reverse(collect(atoms_to_draw))[(n_atoms_per_layer*i+1):(n_atoms_per_layer*(i+1))]], color=("darkorange3",alpha[i]), marker=:circle, markersize=cu_marker_size, strokewidth=0.25, strokecolor="chocolate4")
+	atoms_to_draw=reverse(collect(atoms_to_draw))
+	for i in 0:layers_to_draw-2
+		scatter!(starting_positions[1:2,atoms_to_draw[Int(n_atoms_per_layer*i+1):Int(n_atoms_per_layer*(i+1))]], color=("darkorange3",alpha[Int(i+1)]), marker=:circle, markersize=cu_marker_size, strokewidth=0.25, strokecolor="chocolate4")
 	end
 	# Draw cell boundaries
 	poly!(Point2f[(0,0), (cell_ang[1,1],0), (sum(cell_ang[1,1:2]), cell_ang[2,2]), (cell_ang[1,2], cell_ang[2,2])], strokecolor="white" ,strokewidth=1, color=("black", 0.0))
 	# Centre view on cell
-	xlims!(-cell_padding,sum(cell_ang[1,1:2])+cell_padding)
-	ylims!(-cell_padding,max(cell_ang[2,:]...)+cell_padding)
+	xlims!(-padding,sum(cell_ang[1,1:2])+padding)
+	ylims!(-padding,max(cell_ang[2,:]...)+padding)
 	# Add color bar
 	Colorbar(f1[1,2], H_density, label="H atom position density")
 	# Save output
