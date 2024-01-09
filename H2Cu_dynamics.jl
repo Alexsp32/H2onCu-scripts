@@ -1,7 +1,9 @@
+module H2CuDynamics
+
 using ACE
-using ACEds.FrictionModels
-using ACEds.FrictionModels: Gamma
-using ACEds: ac_matrixmodel
+# using ACEds.FrictionModels
+# using ACEds.FrictionModels: Gamma
+# using ACEds: ac_matrixmodel
 using ASE
 using BSplineKit
 using ClusterScripts
@@ -31,6 +33,7 @@ using SciMLBase
 using Statistics
 
 #! Driver function
+export driver
 function driver(parameters)
     if parameters["task"]=="langevin"
         results=langevin_dynamics(parameters)
@@ -43,6 +46,7 @@ function driver(parameters)
 end
 
 #! Utility functions
+export generate_angle_triplets
 function generate_angle_triplets(config::Any, sim::Simulation, species1, species2, species3;args...)
     # We need to distinguish four cases: 
     if species1==species2==species3
@@ -77,6 +81,7 @@ function generate_angle_triplets(config::Any, sim::Simulation, species1, species
     end
 end
 
+export all_distances
 """
     all_distances(config::Any, sim::AbstractSimulation, species1, species2; args...)
 
@@ -108,6 +113,7 @@ function all_distances(trj::Vector, sim::Simulation, species1, species2; args...
     return pbc_distances
 end
 
+export pbc_neighbour_positions
 function pbc_neighbour_positions(positions::Any, index::Int, distance_in_au, simulation::NQCDynamics.AbstractSimulation)
     distances=map(x->pbc_distance(positions, index, x, simulation), collect(1:length(simulation.atoms)))
     neighbours=findall(x->x≤auconvert(u"Å",distance_in_au) && x!=0.0u"Å", distances)
@@ -121,12 +127,14 @@ function pbc_neighbour_positions(positions::Any, index::Int, distance_in_au, sim
     return (relative_positions_pbc, simulation.atoms.types[neighbours])
 end
 
+export extract_from_distribution!
 function extract_from_distribution!(parameters)
     nqcd_distribution=jldopen(parameters["initial_conditions_file"])["nqcd_distribution"]
     parameters["DynamicsVariables"]=rand(nqcd_distribution)
     return parameters
 end
 
+export export_trajectory
 """
     export_trajectory(fname, trj, sim)
     
@@ -140,6 +148,7 @@ function export_trajectory(fname, trj, sim; to_export=:OutputDynamicsVariables)
     ase_io.write(fname, ase_trj)
 end
 
+export cu_surface_z
 """
     cu_surface_z(config, indices)
     
@@ -151,6 +160,7 @@ function cu_surface_z(config, indices)
     return mean([pos[3,i] for i in indices])
 end
 
+# ToDo remove this since it's covered in NQCDynamics#diatomicbasics
 struct OutputHydrogenKineticEnergy
     hydrogen_indices::Vector{Int}
 end
@@ -159,6 +169,7 @@ function (hydrogen_kinetic_energy::OutputHydrogenKineticEnergy)(sol, i)
     return map(x->DynamicsUtils.classical_kinetic_energy([1837.4715941070515 for i in hydrogen_kinetic_energy.hydrogen_indices],getindex(x, :, hydrogen_kinetic_energy.hydrogen_indices)), [DynamicsUtils.get_velocities(i) for i in sol.u])
 end
 
+export StrictDesorptionTerminator
 @with_kw mutable struct StrictDesorptionTerminator
     hydrogen_indices
     top_layer_indices::Vector{Int}
@@ -168,6 +179,7 @@ end
     simulation::NQCDynamics.AbstractSimulation
 end
 
+export DesorptionTerminator
 @with_kw mutable struct DesorptionTerminator
     hydrogen_indices
     top_layer_indices::Vector{Int}
@@ -211,7 +223,7 @@ function (desorption_terminator::DesorptionTerminator)(u,t,integrator)::Bool
     return false
 end
 
-
+export create_langevin_distribution
 function create_langevin_distribution(filename::String, trajectory)
     distribution=DynamicalDistribution(map(x->get_velocities(x), trajectory), map(x->NQCDynamics.get_positions(x), trajectory), size(NQCDynamics.get_positions(trajectory[1])))
     jldsave(filename; nqcd_distribution=distribution)
@@ -227,6 +239,7 @@ end
 
 #! MLIP interfaces
 
+export set_potential_energy_surface, load_schnet_model!,load_ace_model!, load_mace_model!, load_painn_model!, load_reann_model!, load_nov23_mace_model!, load_nov23_mace_models!
 """
     set_potential_energy_surface(ase_structure, parameters)
 
@@ -235,13 +248,13 @@ TBW
 """
 function set_potential_energy_surface(ase_structure, parameters)
     if haskey(parameters, "model_type")
-        method=parameters["model_type"]
+        method=parameters["model_type"] # keeping model_type for backward compatibility
     elseif haskey(parameters, "pes_type")
         method=parameters["pes_type"]
     else
         error("No PES method supplied.")
     end
-    if method=="schnet" #keeping model_type for backward compatibility
+    if method=="schnet" 
         load_schnet_model!(ase_structure, parameters)
     elseif method=="mace"
         load_mace_model!(ase_structure, parameters)
@@ -381,6 +394,10 @@ function load_nov23_mace_models!(ase_structure, parameters)
     return nothing
 end
     
+#! Friction Tensor interfaces
+
+export set_friction_model ,EFT_LDFA_scikit, EFT_LDFA_cube_model, EFT_ODF_SchNet #* ,EFT_ODF_ACE removed due to incompatibility of ACEds with Julia 1.10 as of 2024-01-09
+
 function EFT_LDFA_cube_model(ase_structure, parameters)
     nqcd_atoms, nqcd_positions, nqcd_cell=NQCBase.convert_from_ase_atoms(ase_structure)
     density=CubeDensity(parameters["LDFA_cube_file"], nqcd_cell)
@@ -408,7 +425,9 @@ function EFT_LDFA_scikit(ase_structure, parameters)
     return LDFAFriction(density, nqcd_atoms; friction_atoms=parameters["friction_atoms"])
 end
 
+#* removed due to incompatibility of ACEds with Julia 1.10 as of 2024-01-09
 
+#=
 function EFT_ODF_ACE(ase_structure, parameters)
     eft_unit = u"ps^-1"
     # convert ase atoms to julip atoms
@@ -418,6 +437,7 @@ function EFT_ODF_ACE(ase_structure, parameters)
     eft_model=FrictionProviders.ACEdsODF(eft_model_ace, Gamma, julip_atoms; friction_unit=eft_unit)
     return ODFriction(eft_model; friction_atoms=parameters["friction_atoms"])
 end
+=#
 
 function EFT_ODF_SchNet(ase_structure, parameters)
     schnet_friction_tensor=pyimport("friction_tensor")
@@ -447,8 +467,8 @@ function set_friction_model(ase_structure, parameters)
     if parameters["friction_type"]=="ODF_SchNet"
         return EFT_ODF_SchNet(ase_structure, parameters)
     elseif parameters["friction_type"]=="ODF_ACE"
-        # ToDo: Commented out for testing 
-        return EFT_ODF_ACE(ase_structure, parameters)
+        #* incompatibility of ACEds with Julia 1.10 as of 2024-01-09
+        # return EFT_ODF_ACE(ase_structure, parameters)
     elseif parameters["friction_type"]=="LDFA_scikit"
         return EFT_LDFA_scikit(ase_structure, parameters)
     elseif parameters["friction_type"]=="LDFA_cube_file"
@@ -459,6 +479,8 @@ end
 
 
 #! Dynamics functions
+export langevin_dynamics, thermal_montecarlo, mdef_2tm, evaluate_energies_forces_friction, initialise_simulation
+
 function langevin_dynamics(parameters::Dict{String,Any})
     # Simulation initialisation
     sim_kwargs=Dict{Symbol, Any}(
@@ -533,7 +555,7 @@ function thermal_montecarlo(parameters)
         positions, # Initial configuration
         get!(parameters, "MC_steps", 10), # Number of MonteCarlo steps to do. 
         step_sizes; # Step sizes per atom species. 
-        get!(parameters, "MC_kwargs", Dict{Symbol, Any}()), # Additional kwargs to pass to the MC sampling function. 
+        get!(parameters, "MC_kwargs", Dict{Symbol, Any}())... # Additional kwargs to pass to the MC sampling function. 
     )
     return(mc_chain, parameters)
 end
@@ -642,7 +664,7 @@ function initialise_simulation(parameters::Dict{String, Any}; method::Type=Class
     # Setup simulation and termination condition. 
     # Initialise NCQD Simulation
     atoms,initial_positions,cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
-    set_periodicity!(cell,[true,true,true]) #? Is this actually necessary or already set?
+    set_periodicity!(cell,[true,true,true])
     sim_kwargs[:cell]=cell
     sim_kwargs[:temperature]=haskey(parameters, "temperature") ? parameters["temperature"] : T_el_function
     simulation=Simulation{method}(
@@ -653,4 +675,4 @@ function initialise_simulation(parameters::Dict{String, Any}; method::Type=Class
     return simulation, atoms, initial_positions, cell
 end
     
-
+end #module

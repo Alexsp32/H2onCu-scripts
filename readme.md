@@ -23,6 +23,8 @@ MACE 0.1.0 is known working with `torch==1.8.2` on Python 3.8.6 and 3.9.6.
 ## Julia environment
 This will work if you have access to all the necessary repositories and an SSH key set up for GitHub:
 
+**Julia must be <1.10, otherwise dependencies will be screwed up!**
+
 ```julia
 ] registry add https://github.com/NQCD/NQCRegistry
 registry add https://github.com/ACEsuit/ACEregistry.git
