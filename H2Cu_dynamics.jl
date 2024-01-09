@@ -533,7 +533,7 @@ function thermal_montecarlo(parameters)
         positions, # Initial configuration
         get!(parameters, "MC_steps", 10), # Number of MonteCarlo steps to do. 
         step_sizes; # Step sizes per atom species. 
-        get!(parameters, "MC_kwargs", Dict{Symbol, Any}()), # Additional kwargs to pass to the MC sampling function. 
+        get!(parameters, "MC_kwargs", Dict{Symbol, Any}())... # Additional kwargs to pass to the MC sampling function. 
     )
     return(mc_chain, parameters)
 end
