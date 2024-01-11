@@ -540,7 +540,7 @@ function mdef_2tm(parameters)
     end
     
     simulation, atoms, positions, cell=initialise_simulation(parameters; method=MDEF)
-    desorption_callback=DesorptionTerminator(friction_model.friction_atoms, parameters["Cu_toplayer_indices"], parameters["desorption_min_surface_distance"])
+    desorption_callback=DesorptionTerminator(simulation.calculator.model.friction_model.friction_atoms, parameters["Cu_toplayer_indices"], parameters["desorption_min_surface_distance"])
     terminate_callback=DynamicsUtils.TerminatingCallback(desorption_callback)
     # Run desorption simulations
     if haskey(parameters, "outputs")
