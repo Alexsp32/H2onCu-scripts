@@ -8,7 +8,6 @@ using ClusterScripts
 using Combinatorics
 using DataInterpolations
 using DelimitedFiles
-using DiatomicBasics
 using Dictionaries
 using DiffEqBase
 using Distributed
@@ -92,7 +91,7 @@ function all_distances(config::Any, sim::Simulation, species1, species2; r_cut=1
     # Distance iterator exists now. 
     pbc_distances=[]
     for combination in combinations
-        dist=DiatomicBasics.pbc_distance(config, combination..., sim; args...)
+        dist=Structure.pbc_distance(config, combination..., sim; args...)
         if dist<r_cut
             push!(pbc_distances, dist)
         end
@@ -109,7 +108,7 @@ function all_distances(trj::Vector, sim::Simulation, species1, species2; args...
 end
 
 function pbc_neighbour_positions(positions::Any, index::Int, distance_in_au, simulation::NQCDynamics.AbstractSimulation)
-    distances=map(x->pbc_distance(positions, index, x, simulation), collect(1:length(simulation.atoms)))
+    distances=map(x->Structure.pbc_distance(positions, index, x, simulation), collect(1:length(simulation.atoms)))
     neighbours=findall(x->x≤auconvert(u"Å",distance_in_au) && x!=0.0u"Å", distances)
     positions_matrix=NQCDynamics.get_positions(positions)
     translations=[[i,j,k] for i in -1:1 for j in -1:1 for k in -1:1]
@@ -164,27 +163,22 @@ end
     top_layer_indices::Vector{Int}
     max_hydrogen_bond_distance=1.0
     min_desorption_distance=8.0
-    desorption_trajectories=0
-    simulation::NQCDynamics.AbstractSimulation
 end
 
 @with_kw mutable struct DesorptionTerminator
     hydrogen_indices
     top_layer_indices::Vector{Int}
     min_desorption_distance=8.0
-    desorption_trajectories=0
-    simulation::NQCDynamics.AbstractSimulation
 end
 
 function (desorption_terminator::StrictDesorptionTerminator)(u,t,integrator)::Bool
     # Find possible hydrogen molecules from all unique distance combinations of H atoms. 
     h_combinations=collect(multiset_combinations(desorption_terminator.hydrogen_indices, 2)) # Unique H neighbour list
-    distances=[distance(u, combination...) for combination in h_combinations] # Generate all distances
+    distances=[Structure.pbc_distance(u, combination...) for combination in h_combinations] # Generate all distances
     h_molecules=findall(x->x<=desorption_terminator.max_hydrogen_bond_distance, distances) # Find where the distance is sufficiently small. 
     surface_z=cu_surface_z(u, desorption_terminator.top_layer_indices)
     for molecule in h_molecules
-        if pbc_center_of_mass(u, molecule..., desorption_terminator.simulation)[3]-surface_z>=ang_to_au(desorption_terminator.min_desorption_distance) # Check if H2 COM is far enough away from the surface COM
-            desorption_terminator.desorption_trajectories+=1
+        if Structure.pbc_center_of_mass(u, molecule..., integrator.p)[3] - surface_z >= ang_to_au(desorption_terminator.min_desorption_distance) # Check if H2 COM is far enough away from the surface COM
             return true
         end
     end
@@ -203,8 +197,7 @@ function (desorption_terminator::DesorptionTerminator)(u,t,integrator)::Bool
     h_combinations=collect(multiset_combinations(desorption_terminator.hydrogen_indices, 2)) # Unique H neighbour list
     surface_z=cu_surface_z(u, desorption_terminator.top_layer_indices)
     for molecule in h_combinations
-        if pbc_center_of_mass(u, molecule..., desorption_terminator.simulation;cutoff=1)[3]-surface_z>=ang_to_au(desorption_terminator.min_desorption_distance) # Check if H2 COM is far enough away from the surface COM
-            desorption_terminator.desorption_trajectories+=1
+        if Structure.pbc_center_of_mass(u, molecule..., desorption_terminator.simulation;cutoff=1)[3]-surface_z>=ang_to_au(desorption_terminator.min_desorption_distance) # Check if H2 COM is far enough away from the surface COM
             return true
         end
     end
