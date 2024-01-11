@@ -197,7 +197,7 @@ function (desorption_terminator::DesorptionTerminator)(u,t,integrator)::Bool
     h_combinations=collect(multiset_combinations(desorption_terminator.hydrogen_indices, 2)) # Unique H neighbour list
     surface_z=cu_surface_z(u, desorption_terminator.top_layer_indices)
     for molecule in h_combinations
-        if Structure.pbc_center_of_mass(u, molecule..., desorption_terminator.simulation;cutoff=1)[3]-surface_z>=ang_to_au(desorption_terminator.min_desorption_distance) # Check if H2 COM is far enough away from the surface COM
+        if Structure.pbc_center_of_mass(u, molecule..., integrator.p;cutoff=1)[3]-surface_z>=ang_to_au(desorption_terminator.min_desorption_distance) # Check if H2 COM is far enough away from the surface COM
             return true
         end
     end
