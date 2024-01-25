@@ -408,6 +408,23 @@ function EFT_LDFA_scikit(ase_structure, parameters)
     return LDFAFriction(density, nqcd_atoms; friction_atoms=parameters["friction_atoms"])
 end
 
+function EFT_LDFA_ACE(ase_structure, parameters)
+    ase_io=pyimport("ase.io")
+    # Construct independent H atom model of surface. 
+    single_H_structure=ase_io.read(parameters["starting_structure"])
+    atoms, positions, cell=NQCBase.convert_from_ase_atoms(single_H_structure)
+    H_indices=reverse(findall(single_H_structure.symbols.=="H", single_H_structure))
+    if length(H_indices)≥2
+        for i in H_indices[2:end]
+            single_H_structure.pop(i)
+        end
+    end
+    julip_atoms=JuLIP.Atoms(ASE.ASEAtoms(single_H_structure))
+    eft_model=ACE1.read_dict(load_dict(parameters["eft_model_path"])["potential"])
+    JuLIP.set_calculator!(julip_atoms, eft_model)
+    density_model=AceLDFA(AdiabaticModels.JuLIPModel(julip_atoms); density_unit=u"Å^-3")
+    return FrictionModels.LDFAFriction(density_model, atoms; friction_atoms=parameters["friction_atoms"])
+end
 
 function EFT_ODF_ACE(ase_structure, parameters)
     eft_unit = u"ps^-1"
@@ -447,8 +464,9 @@ function load_EFT_model(ase_structure, parameters)
     if parameters["friction_type"]=="ODF_SchNet"
         return EFT_ODF_SchNet(ase_structure, parameters)
     elseif parameters["friction_type"]=="ODF_ACE"
-        # ToDo: Commented out for testing 
         return EFT_ODF_ACE(ase_structure, parameters)
+    elseif parameters["friction_type"]=="LDFA_ACE"
+        return EFT_LDFA_ACE(ase_structure, parameters)
     elseif parameters["friction_type"]=="LDFA_scikit"
         return EFT_LDFA_scikit(ase_structure, parameters)
     elseif parameters["friction_type"]=="LDFA_cube_file"
