@@ -564,14 +564,13 @@ function thermal_montecarlo(parameters)
 end
 
 function mdef_2tm(parameters)
-    # Load initial distribution
-    if haskey(parameters, "DynamicsVariables")
-        nqcd_distribution=parameters["DynamicsVariables"]
-    else
-        nqcd_distribution=jldopen(parameters["initial_conditions_file"])["nqcd_distribution"]
-    end
-    
     simulation, atoms, positions, cell=initialise_simulation(parameters; method=MDEF)
+    # Load initial distribution
+    if haskey(parameters, "initial_conditions_file")
+        nqcd_distribution=jldopen(parameters["initial_conditions_file"])["nqcd_distribution"]        
+    else
+        nqcd_distribution=DynamicsVariables(simulation, zeros(size(simulation)), positions)
+    end
     desorption_callback=DesorptionTerminator(parameters["friction_atoms"], parameters["Cu_toplayer_indices"], parameters["desorption_min_surface_distance"], 0, simulation)
     terminate_callback=DynamicsUtils.TerminatingCallback(desorption_callback)
     # Run desorption simulations
