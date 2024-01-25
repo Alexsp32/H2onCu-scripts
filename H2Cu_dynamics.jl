@@ -1,7 +1,8 @@
 using ACE
-using ACEds.FrictionModels
-using ACEds.FrictionModels: Gamma
-using ACEds: ac_matrixmodel
+using ACE1
+#* using ACEds.FrictionModels can't use due to imcompatibility with ACE1
+#* using ACEds.FrictionModels: Gamma can't use due to incompatibility with ACE1
+#* using ACEds: ac_matrixmodel can't use due to incompatibility with ACE1
 using ASE
 using BSplineKit
 using ClusterScripts
@@ -413,7 +414,7 @@ function EFT_LDFA_ACE(ase_structure, parameters)
     # Construct independent H atom model of surface. 
     single_H_structure=ase_io.read(parameters["starting_structure"])
     atoms, positions, cell=NQCBase.convert_from_ase_atoms(single_H_structure)
-    H_indices=reverse(findall(single_H_structure.symbols.=="H", single_H_structure))
+    H_indices=reverse(findall(x->x=="H", single_H_structure.symbols))
     if length(H_indices)≥2
         for i in H_indices[2:end]
             single_H_structure.pop(i)
@@ -423,10 +424,14 @@ function EFT_LDFA_ACE(ase_structure, parameters)
     eft_model=ACE1.read_dict(load_dict(parameters["eft_model_path"])["potential"])
     JuLIP.set_calculator!(julip_atoms, eft_model)
     density_model=AceLDFA(AdiabaticModels.JuLIPModel(julip_atoms); density_unit=u"Å^-3")
-    return FrictionModels.LDFAFriction(density_model, atoms; friction_atoms=parameters["friction_atoms"])
+    return LDFAFriction(density_model, atoms; friction_atoms=parameters["friction_atoms"])
 end
 
 function EFT_ODF_ACE(ase_structure, parameters)
+    throw(KeywordArgError("ACEds models can't be loaded due to incompatibility with ACE1"))
+    exit()
+    #* old function
+    #=
     eft_unit = u"ps^-1"
     # convert ase atoms to julip atoms
     ase_jl = ASE.ASEAtoms(ase_structure)
@@ -434,6 +439,7 @@ function EFT_ODF_ACE(ase_structure, parameters)
     # create an ACEds model object
     eft_model=FrictionProviders.ACEdsODF(eft_model_ace, Gamma, julip_atoms; friction_unit=eft_unit)
     return ODFriction(eft_model; friction_atoms=parameters["friction_atoms"])
+    =#
 end
 
 function EFT_ODF_SchNet(ase_structure, parameters)
