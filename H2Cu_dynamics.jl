@@ -547,7 +547,7 @@ function mdef_2tm(parameters)
     end
     
     simulation, atoms, positions, cell=initialise_simulation(parameters; method=MDEF)
-    desorption_callback=DesorptionTerminator(friction_model.friction_atoms, parameters["Cu_toplayer_indices"], parameters["desorption_min_surface_distance"], 0, simulation)
+    desorption_callback=DesorptionTerminator(parameters["friction_atoms"], parameters["Cu_toplayer_indices"], parameters["desorption_min_surface_distance"], 0, simulation)
     terminate_callback=DynamicsUtils.TerminatingCallback(desorption_callback)
     # Run desorption simulations
     if haskey(parameters, "outputs")
@@ -623,10 +623,7 @@ function initialise_simulation(parameters::Dict{String, Any}; method::Type=Class
     @info "Loading PES model"
     nqcd_model=nothing
     nqcd_model=set_potential_energy_surface(ase_structure, parameters) # Choose the desired ML model type and attach its calculator to ase_structure
-    if typeof(nqcd_model)==Nothing
-        # In this case, the ML method has modified ase_structure by attaching a calculator to it. 
-        nqcd_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
-    end
+    nqcd_model = typeof(nqcd_model)==Nothing ? AdiabaticASEModel(ase_structure) : nqcd_model
     @info "Assigning friction model if friction_atoms is set"
     # Assign the chosen EFT model if friction_atoms are set. 
     EFT_model=haskey(parameters, "friction_atoms") ? load_EFT_model(ase_structure, parameters) : nothing
@@ -640,22 +637,28 @@ function initialise_simulation(parameters::Dict{String, Any}; method::Type=Class
     if !haskey(parameters, "T_el_file") && !haskey(parameters, "T_ph_file") # Constant temperature case
         thermostats=parameters["temperature"]
         @info "Combining PES and friction models if necessary"
-        nqcd_model=isa(EFT_model, Nothing) ? nqcd_model : CompositeFrictionModel(nqcd_model, EFT_model)
+        complete_model=isa(EFT_model, Nothing) ? nqcd_model : CompositeFrictionModel(nqcd_model, EFT_model)
     elseif haskey(parameters, "T_el_file") && !haskey(parameters, "T_ph_file") # Electronic temperature only --> Apply to entire system
-        thermostats=T_el_function
-        nqcd_model=CompositeFrictionModel(nqcd_model, EFT_model)
+        thermostats=T_function_from_file(parameters["T_el_file"])
+        complete_model=CompositeFrictionModel(nqcd_model, EFT_model)
     elseif haskey(parameters, "T_el_file") && haskey(parameters, "T_ph_file") # Complete 2TM --> Split thermostats
         T_el_function=T_function_from_file(parameters["T_el_file"])
         T_ph_function=T_function_from_file(parameters["T_ph_file"])
         phonon_indices=!haskey(parameters, "T_ph_indices") ? symdiff(1:length(ase_structure), parameters["friction_atoms"]) : parameters["T_ph_indices"]
         thermostats=[Thermostat(T_el_function, parameters["friction_atoms"]), Thermostat(T_ph_function, phonon_indices)]
-        nqcd_model=CompositeModel(
-            Subsystem(nqcd_model, :), # PES
+        remaining_atoms=symdiff(1:size(initial_positions)[2], [t.indices for t in thermostats]...)
+        if remaining_atoms!=[] # If any atoms aren't assigned to a thermostat, freeze them. 
+            push!(thermostats, Thermostat(0.0, remaining_atoms))
+        end
+        complete_model=CompositeModel(
+            Subsystem(nqcd_model, 1:size(initial_positions)[2]), # PES
             Subsystem(EFT_model, parameters["friction_atoms"]), # Electronic friction
-            Subsystem(ConstantFriction(size(atoms)[1], parameters["γ_phonon"]), phonon_indices) # Phononic friction
+            Subsystem(ConstantFriction(size(initial_positions)[1], parameters["γ_phonon"]), phonon_indices) # Phononic friction
         )
+    else
+        complete_model=nothing
     end
-    @info "Generated PES (+Friction) model: ($nqcd_model)"
+    @info "Generated PES (+Friction) model: ($complete_model)"
     # Setup simulation and termination condition. 
     # Initialise NCQD Simulation
     set_periodicity!(cell,[true,true,true]) #? Is this actually necessary or already set?
@@ -663,7 +666,7 @@ function initialise_simulation(parameters::Dict{String, Any}; method::Type=Class
     sim_kwargs[:temperature]=thermostats
     simulation=Simulation{method}(
         atoms,
-        nqcd_model;
+        isa(complete_model, Nothing) ? nqcd_model : complete_model;
         sim_kwargs...
     )
     return simulation, atoms, initial_positions, cell
