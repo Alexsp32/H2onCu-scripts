@@ -418,7 +418,7 @@ function EFT_LDFA_ACE(ase_structure, parameters)
     H_indices=sort(parameters["friction_atoms"];rev=true)
     if length(H_indices)≥2
         for i in H_indices[2:end]
-            single_H_structure.pop(i)
+            single_H_structure.pop(i-1)
         end
     end
     julip_atoms=JuLIP.Atoms(ASE.ASEAtoms(single_H_structure))
