@@ -415,7 +415,7 @@ function EFT_LDFA_ACE(ase_structure, parameters)
     # Construct independent H atom model of surface. 
     single_H_structure=ase_io.read(parameters["starting_structure"])
     atoms, positions, cell=NQCBase.convert_from_ase_atoms(single_H_structure)
-    H_indices=reverse(findall(x->x=="H", single_H_structure.symbols))
+    H_indices=sort(parameters["friction_atoms"];rev=true)
     if length(H_indices)≥2
         for i in H_indices[2:end]
             single_H_structure.pop(i)
