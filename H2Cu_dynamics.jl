@@ -184,10 +184,9 @@ Outputs trajectories during dynamics propagation to help searching for structure
 struct TrajectoryWriter
     filename::String
 end
-TrajectoryWriter(name)=TrajectoryWriter("$(name)_$(ENV["SLURM_JOBID"]-$(ENV["SLURM_ARRAY_TASK_ID"])).csv")
 
 function (writer::TrajectoryWriter)(u, t, integrator)
-    open(writer.filename, "a") do file
+    open("$(writer.filename)_$(ENV["SLURM_JOBID"])-$(ENV["SLURM_ARRAY_TASK_ID"]).csv", "a") do file
         writedlm(file, u, ",")
     end
     return false
