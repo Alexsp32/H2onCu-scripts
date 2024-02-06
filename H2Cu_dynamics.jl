@@ -178,6 +178,21 @@ end
     simulation::NQCDynamics.AbstractSimulation
 end
 
+"""
+Outputs trajectories during dynamics propagation to help searching for structures which cause errors for the ACE LDFA model. 
+"""
+struct TrajectoryWriter
+    filename::String
+end
+TrajectoryWriter(name)=TrajectoryWriter("$(name)_$(ENV["SLURM_JOBID"]-$(ENV["SLURM_ARRAY_TASK_ID"])).csv")
+
+function (writer::TrajectoryWriter)(u, t, integrator)
+    open(writer.filename, "a") do file
+        writedlm(file, u, ",")
+    end
+    return false
+end
+
 function (desorption_terminator::StrictDesorptionTerminator)(u,t,integrator)::Bool
     # Find possible hydrogen molecules from all unique distance combinations of H atoms. 
     h_combinations=collect(multiset_combinations(desorption_terminator.hydrogen_indices, 2)) # Unique H neighbour list
@@ -573,6 +588,7 @@ function mdef_2tm(parameters)
     end
     desorption_callback=DesorptionTerminator(parameters["friction_atoms"], parameters["Cu_toplayer_indices"], parameters["desorption_min_surface_distance"], 0, simulation)
     terminate_callback=DynamicsUtils.TerminatingCallback(desorption_callback)
+    write_structure_callback=DynamicsUtils.TerminatingCallback(TrajectoryWriter("tmp/trajectory"))
     # Run desorption simulations
     if haskey(parameters, "outputs")
         outputs=parameters["outputs"]
@@ -591,6 +607,7 @@ function mdef_2tm(parameters)
         saveat_arg=map(austrip, collect(parameters["equilibration_time"]:parameters["timestep"]:parameters["runtime"]))
     end
     GC.gc()
+    @info "Entering run_dynamics"
     traj=run_dynamics(
         simulation,
         (0.0u"fs", get!(parameters, "runtime", 0.3u"ps")),
@@ -599,9 +616,11 @@ function mdef_2tm(parameters)
         trajectories=get!(parameters, "trajectories", 1),
         output=outputs,
         ensemble_algorithm=get!(parameters, "ensemble_algorithm", EnsembleSerial()),
-        callback=CallbackSet(DynamicsUtils.CellBoundaryCallback(),terminate_callback),
+        callback=CallbackSet(DynamicsUtils.CellBoundaryCallback(),terminate_callback, write_structure_callback),
         saveat=saveat_arg,
+        progress=true
     )
+    @info "Exiting run_dynamics"
     # Pack single trajectory into Array to ensure similarity with >1 trajectory
     if parameters["trajectories"]==1
         results=[traj]
