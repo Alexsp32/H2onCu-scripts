@@ -434,7 +434,7 @@ function EFT_ODF_ACE(ase_structure, parameters)
     ase_jl = ASE.ASEAtoms(ase_structure)
     julip_atoms = JuLIP.Atoms(ase_jl)
     # create an ACEds model object
-    eft_model_ace=JuLIP.read_dict(ACE.FIO.load_dict(parameters["eft_model_path"])) #ToDo: Check if this works or whether we need global scope again. 
+    #* eft_model_ace has to be defined in global scope in the running file because ACEds...
     eft_model=FrictionProviders.ACEdsODF(eft_model_ace, Gamma, julip_atoms; friction_unit=eft_unit)
     return ODFriction(eft_model; friction_atoms=parameters["friction_atoms"])
 end
@@ -599,6 +599,7 @@ function mdef_2tm(parameters)
         saveat=saveat_arg,
     )
     # Pack single trajectory into Array to ensure similarity with >1 trajectory
+    @info "Desorption angle: $(traj[:OutputDesorptionAngle])"
     if parameters["trajectories"]==1
         results=[traj]
     else
@@ -634,17 +635,17 @@ function evaluate_energies_forces_friction(position_trajectory, parameters::Dict
 end
 
 function initialise_simulation(parameters::Dict{String, Any}; method::Type=Classical, sim_kwargs=Dict{Symbol, Any}())
-    @info "Loading ase (Python)"
+    #@info "Loading ase (Python)"
     ase_io=pyimport("ase.io")
     ase=pyimport("ase")
     ase_structure=ase_io.read(parameters["starting_structure"]; index=0)
     atoms,initial_positions,cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
     # Initialise PES model
-    @info "Loading PES model"
+    #@info "Loading PES model"
     nqcd_model=nothing
     nqcd_model=set_potential_energy_surface(ase_structure, parameters) # Choose the desired ML model type and attach its calculator to ase_structure
     nqcd_model = typeof(nqcd_model)==Nothing ? AdiabaticASEModel(ase_structure) : nqcd_model
-    @info "Assigning friction model if friction_atoms is set"
+    #@info "Assigning friction model if friction_atoms is set"
     # Assign the chosen EFT model if friction_atoms are set. 
     EFT_model=haskey(parameters, "friction_atoms") ? load_EFT_model(ase_structure, parameters) : nothing
     # Generate Thermostats
@@ -653,10 +654,10 @@ function initialise_simulation(parameters::Dict{String, Any}; method::Type=Class
         T_function(time_ps)=interpolate(T_profile[:,1], T_profile[:,2], BSplineOrder(3))(ustrip(u"ps", time_ps))*u"K" # Put T_el function in the right format for NQCD
         return T_function
     end
-    @info "Generating model and thermostat for simulation type"
+    #@info "Generating model and thermostat for simulation type"
     if !haskey(parameters, "T_el_file") && !haskey(parameters, "T_ph_file") # Constant temperature case
         thermostats=parameters["temperature"]
-        @info "Combining PES and friction models if necessary"
+        #@info "Combining PES and friction models if necessary"
         complete_model=isa(EFT_model, Nothing) ? nqcd_model : CompositeFrictionModel(nqcd_model, EFT_model)
     elseif haskey(parameters, "T_el_file") && !haskey(parameters, "T_ph_file") # Electronic temperature only --> Apply to entire system
         thermostats=T_function_from_file(parameters["T_el_file"])
@@ -678,7 +679,7 @@ function initialise_simulation(parameters::Dict{String, Any}; method::Type=Class
     else
         complete_model=nothing
     end
-    @info "Generated PES (+Friction) model: ($complete_model)"
+    #@info "Generated PES (+Friction) model: ($complete_model)"
     # Setup simulation and termination condition. 
     # Initialise NCQD Simulation
     set_periodicity!(cell,[true,true,true]) #? Is this actually necessary or already set?
