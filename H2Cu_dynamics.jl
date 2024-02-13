@@ -1,7 +1,9 @@
-using ACE
-using ACEds.FrictionModels
-using ACEds.FrictionModels: Gamma
-using ACEds: ac_matrixmodel
+import ACE
+import ACE1
+import ACEpotentials
+#* using ACEds.FrictionModels can't use due to imcompatibility with ACE1
+#* using ACEds.FrictionModels: Gamma can't use due to incompatibility with ACE1
+#* using ACEds: ac_matrixmodel can't use due to incompatibility with ACE1
 using ASE
 using BSplineKit
 using ClusterScripts
@@ -408,8 +410,29 @@ function EFT_LDFA_scikit(ase_structure, parameters)
     return LDFAFriction(density, nqcd_atoms; friction_atoms=parameters["friction_atoms"])
 end
 
+function EFT_LDFA_ACE(ase_structure, parameters)
+    ase_io=pyimport("ase.io")
+    # Construct independent H atom model of surface. 
+    single_H_structure=ase_io.read(parameters["starting_structure"])
+    atoms, positions, cell=NQCBase.convert_from_ase_atoms(single_H_structure)
+    H_indices=sort(parameters["friction_atoms"];rev=true)
+    if length(H_indices)≥2
+        for i in H_indices[2:end]
+            single_H_structure.pop(i-1)
+        end
+    end
+    julip_atoms=JuLIP.Atoms(ASE.ASEAtoms(single_H_structure))
+    eft_model=ACE1.read_dict(load_dict(parameters["eft_model_path"])["potential"])
+    JuLIP.set_calculator!(julip_atoms, eft_model)
+    density_model=AceLDFA(AdiabaticModels.JuLIPModel(julip_atoms); density_unit=u"Å^-3")
+    return LDFAFriction(density_model, atoms; friction_atoms=parameters["friction_atoms"])
+end
 
 function EFT_ODF_ACE(ase_structure, parameters)
+    throw(KeywordArgError("ACEds models can't be loaded due to incompatibility with ACE1"))
+    exit()
+    #* old function
+    #=
     eft_unit = u"ps^-1"
     # convert ase atoms to julip atoms
     ase_jl = ASE.ASEAtoms(ase_structure)
@@ -417,6 +440,7 @@ function EFT_ODF_ACE(ase_structure, parameters)
     # create an ACEds model object
     eft_model=FrictionProviders.ACEdsODF(eft_model_ace, Gamma, julip_atoms; friction_unit=eft_unit)
     return ODFriction(eft_model; friction_atoms=parameters["friction_atoms"])
+    =#
 end
 
 function EFT_ODF_SchNet(ase_structure, parameters)
@@ -438,7 +462,7 @@ function EFT_ODF_SchNet(ase_structure, parameters)
     return ODFriction(eft; friction_atoms=parameters["friction_atoms"])
 end
 
-function set_friction_model(ase_structure, parameters)
+function load_EFT_model(ase_structure, parameters)
     # If no friction_atoms are specified, assume all hydrogens are meant to experience friction.
     if haskey(parameters, "friction_atoms")==false
         parameters["friction_atoms"]=findall(x->x=="H", ase_structure.symbols) # These indices are Julian, so from 1
@@ -447,8 +471,9 @@ function set_friction_model(ase_structure, parameters)
     if parameters["friction_type"]=="ODF_SchNet"
         return EFT_ODF_SchNet(ase_structure, parameters)
     elseif parameters["friction_type"]=="ODF_ACE"
-        # ToDo: Commented out for testing 
         return EFT_ODF_ACE(ase_structure, parameters)
+    elseif parameters["friction_type"]=="LDFA_ACE"
+        return EFT_LDFA_ACE(ase_structure, parameters)
     elseif parameters["friction_type"]=="LDFA_scikit"
         return EFT_LDFA_scikit(ase_structure, parameters)
     elseif parameters["friction_type"]=="LDFA_cube_file"
@@ -539,15 +564,14 @@ function thermal_montecarlo(parameters)
 end
 
 function mdef_2tm(parameters)
-    # Load initial distribution
-    if haskey(parameters, "DynamicsVariables")
-        nqcd_distribution=parameters["DynamicsVariables"]
-    else
-        nqcd_distribution=jldopen(parameters["initial_conditions_file"])["nqcd_distribution"]
-    end
-    
     simulation, atoms, positions, cell=initialise_simulation(parameters; method=MDEF)
-    desorption_callback=DesorptionTerminator(friction_model.friction_atoms, parameters["Cu_toplayer_indices"], parameters["desorption_min_surface_distance"], 0, simulation)
+    # Load initial distribution
+    if haskey(parameters, "initial_conditions_file")
+        nqcd_distribution=jldopen(parameters["initial_conditions_file"])["nqcd_distribution"]        
+    else
+        nqcd_distribution=DynamicsVariables(simulation, zeros(size(simulation)), positions)
+    end
+    desorption_callback=DesorptionTerminator(parameters["friction_atoms"], parameters["Cu_toplayer_indices"], parameters["desorption_min_surface_distance"], 0, simulation)
     terminate_callback=DynamicsUtils.TerminatingCallback(desorption_callback)
     # Run desorption simulations
     if haskey(parameters, "outputs")
@@ -614,40 +638,59 @@ function evaluate_energies_forces_friction(position_trajectory, parameters::Dict
 end
 
 function initialise_simulation(parameters::Dict{String, Any}; method::Type=Classical, sim_kwargs=Dict{Symbol, Any}())
-    @debug "Loading ase (Python)"
+    @info "Loading ase (Python)"
     ase_io=pyimport("ase.io")
     ase=pyimport("ase")
     ase_structure=ase_io.read(parameters["starting_structure"]; index=0)
+    atoms,initial_positions,cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
     # Initialise PES model
-    @debug "Loading PES model"
+    @info "Loading PES model"
     nqcd_model=nothing
     nqcd_model=set_potential_energy_surface(ase_structure, parameters) # Choose the desired ML model type and attach its calculator to ase_structure
-    if typeof(nqcd_model)==Nothing
-        # In this case, the ML method has modified ase_structure by attaching a calculator to it. 
-        nqcd_model=AdiabaticASEModel(ase_structure) # Connect ase_structure calculator to NQCD
-    end
-    @debug "Assigning friction model if friction_atoms is set"
+    nqcd_model = typeof(nqcd_model)==Nothing ? AdiabaticASEModel(ase_structure) : nqcd_model
+    @info "Assigning friction model if friction_atoms is set"
     # Assign the chosen EFT model if friction_atoms are set. 
-    friction_model=haskey(parameters, "friction_atoms") ? set_friction_model(ase_structure, parameters) : nothing
-    @debug "Combining PES+Friction models if necessary"
-    # Combine models to CompositeFrictionModel
-    nqcd_model=isa(friction_model, Nothing) ? nqcd_model : CompositeFrictionModel(nqcd_model, friction_model)
-    @debug "Reading T_el profile if necessary"
-    # Generate temperature profile function
-    if haskey(parameters, "T_el_profile")
-        T_el_profile=readdlm(parameters["T_el_profile"])
-        T_el_function(time_ps)=interpolate(T_el_profile[:,1], T_el_profile[:,2], BSplineOrder(3))(ustrip(u"ps", time_ps))*u"K" # Put T_el function in the right format for NQCD
-        parameters["T_el_function"]=T_el_function # Give the temperature profile in parameters for nice plotting. 
+    EFT_model=haskey(parameters, "friction_atoms") ? load_EFT_model(ase_structure, parameters) : nothing
+    # Generate Thermostats
+    function T_function_from_file(file)
+        T_profile=readdlm(file)
+        T_function(time_ps)=interpolate(T_profile[:,1], T_profile[:,2], BSplineOrder(3))(ustrip(u"ps", time_ps))*u"K" # Put T_el function in the right format for NQCD
+        return T_function
     end
+    @info "Generating model and thermostat for simulation type"
+    if !haskey(parameters, "T_el_file") && !haskey(parameters, "T_ph_file") # Constant temperature case
+        thermostats=parameters["temperature"]
+        @info "Combining PES and friction models if necessary"
+        complete_model=isa(EFT_model, Nothing) ? nqcd_model : CompositeFrictionModel(nqcd_model, EFT_model)
+    elseif haskey(parameters, "T_el_file") && !haskey(parameters, "T_ph_file") # Electronic temperature only --> Apply to entire system
+        thermostats=T_function_from_file(parameters["T_el_file"])
+        complete_model=CompositeFrictionModel(nqcd_model, EFT_model)
+    elseif haskey(parameters, "T_el_file") && haskey(parameters, "T_ph_file") # Complete 2TM --> Split thermostats
+        T_el_function=T_function_from_file(parameters["T_el_file"])
+        T_ph_function=T_function_from_file(parameters["T_ph_file"])
+        phonon_indices=!haskey(parameters, "T_ph_indices") ? symdiff(1:length(ase_structure), parameters["friction_atoms"]) : parameters["T_ph_indices"]
+        thermostats=[Thermostat(T_el_function, parameters["friction_atoms"]), Thermostat(T_ph_function, phonon_indices)]
+        remaining_atoms=symdiff(1:size(initial_positions)[2], [t.indices for t in thermostats]...)
+        if remaining_atoms!=[] # If any atoms aren't assigned to a thermostat, freeze them. 
+            push!(thermostats, Thermostat(0.0, remaining_atoms))
+        end
+        complete_model=CompositeModel(
+            Subsystem(nqcd_model, 1:size(initial_positions)[2]), # PES
+            Subsystem(EFT_model, parameters["friction_atoms"]), # Electronic friction
+            Subsystem(ConstantFriction(size(initial_positions)[1], parameters["γ_phonon"]), phonon_indices) # Phononic friction
+        )
+    else
+        complete_model=nothing
+    end
+    @info "Generated PES (+Friction) model: ($complete_model)"
     # Setup simulation and termination condition. 
     # Initialise NCQD Simulation
-    atoms,initial_positions,cell=NQCDynamics.convert_from_ase_atoms(ase_structure)
     set_periodicity!(cell,[true,true,true]) #? Is this actually necessary or already set?
     sim_kwargs[:cell]=cell
-    sim_kwargs[:temperature]=haskey(parameters, "temperature") ? parameters["temperature"] : T_el_function
+    sim_kwargs[:temperature]=thermostats
     simulation=Simulation{method}(
         atoms,
-        nqcd_model;
+        isa(complete_model, Nothing) ? nqcd_model : complete_model;
         sim_kwargs...
     )
     return simulation, atoms, initial_positions, cell
