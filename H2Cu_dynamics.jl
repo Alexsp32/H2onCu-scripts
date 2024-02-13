@@ -8,6 +8,8 @@ using ASE
 using BSplineKit
 using ClusterScripts
 using Combinatorics
+using CSV
+using DataFrames
 using DataInterpolations
 using DelimitedFiles
 using DiatomicBasics
@@ -651,23 +653,34 @@ function initialise_simulation(parameters::Dict{String, Any}; method::Type=Class
     @info "Assigning friction model if friction_atoms is set"
     # Assign the chosen EFT model if friction_atoms are set. 
     EFT_model=haskey(parameters, "friction_atoms") ? load_EFT_model(ase_structure, parameters) : nothing
-    # Generate Thermostats
-    function T_function_from_file(file)
-        T_profile=readdlm(file)
-        T_function(time_ps)=interpolate(T_profile[:,1], T_profile[:,2], BSplineOrder(3))(ustrip(u"ps", time_ps))*u"K" # Put T_el function in the right format for NQCD
+    """
+    T_function_from_file(file::String, index::Int=2)
+
+    [Henry's 2TM code](https://github.com/Snowd1n/Two-Temperature-Model---Extended-2TM) on commit 4c0e03b2d8c1e3554492d21b5e59d45ede469dfc currently generates CSVs 
+    for the 1D 2TM model with the time in ps, T_el in K, T_ph in K. This function reads the CSV files and
+    returns a function that can be used to interpolate the temperature at any time.
+    """
+    function T_function_from_file(file::String, index::Int=2)
+        TTM_file=CSV.read(file, DataFrame)
+        T_spline=interpolate(TTM_file.Time, TTM_file[:,index], BSplineOrder(4)) # is a cubic spline
+        T_extrapolation=extrapolate(T_spline, Smooth()) #! Don't use to go earlier than the first point! 
+        T_function(time_ps)=T_extrapolation(ustrip(u"ps", time_ps))*u"K"
         return T_function
     end
     @info "Generating model and thermostat for simulation type"
-    if !haskey(parameters, "T_el_file") && !haskey(parameters, "T_ph_file") # Constant temperature case
+    if !haskey(parameters, "2TM-file")
+        # No 2TM file --> Constant temperature case
         thermostats=parameters["temperature"]
         @info "Combining PES and friction models if necessary"
         complete_model=isa(EFT_model, Nothing) ? nqcd_model : CompositeFrictionModel(nqcd_model, EFT_model)
-    elseif haskey(parameters, "T_el_file") && !haskey(parameters, "T_ph_file") # Electronic temperature only --> Apply to entire system
-        thermostats=T_function_from_file(parameters["T_el_file"])
+    elseif haskey(parameters, "2TM-file") && !parameters["2TM-T_ph"]
+        # Electronic temperature only --> Apply to entire system
+        thermostats=T_function_from_file(parameters["2TM-file"])
         complete_model=CompositeFrictionModel(nqcd_model, EFT_model)
-    elseif haskey(parameters, "T_el_file") && haskey(parameters, "T_ph_file") # Complete 2TM --> Split thermostats
-        T_el_function=T_function_from_file(parameters["T_el_file"])
-        T_ph_function=T_function_from_file(parameters["T_ph_file"])
+    elseif parameters["2TM-T_ph"]
+        # Complete 2TM --> Split thermostats
+        T_el_function=T_function_from_file(parameters["2TM-file"], 2)
+        T_ph_function=T_function_from_file(parameters["2TM-file"], 3)
         phonon_indices=!haskey(parameters, "T_ph_indices") ? symdiff(1:length(ase_structure), parameters["friction_atoms"]) : parameters["T_ph_indices"]
         thermostats=[Thermostat(T_el_function, parameters["friction_atoms"]), Thermostat(T_ph_function, phonon_indices)]
         remaining_atoms=symdiff(1:size(initial_positions)[2], [t.indices for t in thermostats]...)
