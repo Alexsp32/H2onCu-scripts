@@ -424,7 +424,7 @@ function EFT_LDFA_ACE(ase_structure, parameters)
         end
     end
     julip_atoms=JuLIP.Atoms(ASE.ASEAtoms(single_H_structure))
-    eft_model=ACE1.read_dict(load_dict(parameters["eft_model_path"])["potential"])
+    eft_model=ACE1.read_dict(load_dict(parameters["eft_model_path"])["IP"])
     JuLIP.set_calculator!(julip_atoms, eft_model)
     density_model=AceLDFA(AdiabaticModels.JuLIPModel(julip_atoms); density_unit=u"Å^-3")
     return LDFAFriction(density_model, atoms; friction_atoms=parameters["friction_atoms"])
