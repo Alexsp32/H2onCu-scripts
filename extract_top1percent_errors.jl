@@ -1,3 +1,5 @@
+
+#? Run this script as extract_top1percent_errors.jl trajectory_file.jld2 output_base_filename
 include("H2Cu_dynamics.jl")
 
 input_file=jldopen(ARGS[1], "r+")
