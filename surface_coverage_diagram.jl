@@ -67,3 +67,4 @@ function surface_coverage_diagram(structure::String, trajectory::String, h_atoms
 	save(output_file, f1)
 end
 
+surface_coverage_diagram(run_args["structure"], run_args["trajectory"], [55,56], run_args["output"])
