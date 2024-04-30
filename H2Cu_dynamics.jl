@@ -43,6 +43,8 @@ function driver(parameters)
         results = mdef_2tm(parameters)
     elseif parameters["task"] == "montecarlo"
         results = thermal_montecarlo(parameters)
+    elseif parameters["task"] == "classical_rpmd"
+        results = classical_rpmd(parameters)
     end
     return results
 end
@@ -660,7 +662,7 @@ function evaluate_energies_forces_friction(position_trajectory, parameters::Dict
     return outputs
 end
 
-function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classical, sim_kwargs=Dict{Symbol,Any}())
+function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classical, sim_kwargs=Dict{Symbol,Any}(), ring_polymer=false)
     @info "Loading ase (Python)"
     ase_io = pyimport("ase.io")
     ase = pyimport("ase")
@@ -722,11 +724,19 @@ function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classi
     set_periodicity!(cell, [true, true, true]) #? Is this actually necessary or already set?
     sim_kwargs[:cell] = cell
     sim_kwargs[:temperature] = thermostats
-    simulation = Simulation{method}(
-        atoms,
-        isa(complete_model, Nothing) ? nqcd_model : complete_model;
-        sim_kwargs...
-    )
+    if ring_polymer
+        simulation = RingPolymerSimulation{method}(
+            atoms,
+            isa(complete_model, Nothing) ? nqcd_model : complete_model;
+            sim_kwargs...
+        )
+    else
+        simulation = Simulation{method}(
+            atoms,
+            isa(complete_model, Nothing) ? nqcd_model : complete_model;
+            sim_kwargs...
+        )
+    end
     return simulation, atoms, initial_positions, cell
 end
 
