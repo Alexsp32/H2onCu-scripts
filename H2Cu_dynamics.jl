@@ -17,7 +17,7 @@ using DelimitedFiles
 using Dictionaries
 using DiffEqBase
 using Distributed
-using FrictionProviders
+#using FrictionProviders
 using JLD2
 using JuLIP
 using JuLIP: set_positions!
@@ -380,6 +380,7 @@ end
 """
 function load_nov23_mace_model!(ase_structure, parameters)
     model_paths = haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"]
+    model_paths = isa(model_paths, String) ? [model_paths] : model_paths # Make sure model paths are always a Vector{String}.
     device = get!(parameters, "mace_devicetype", "cpu")
     atoms, positions, cell = NQCBase.convert_from_ase_atoms(ase_structure)
     mobileatoms = symdiff(1:length(atoms), [constraint.get_indices() .+ 1 for constraint in ase_structure.constraints]...)
@@ -662,6 +663,48 @@ function evaluate_energies_forces_friction(position_trajectory, parameters::Dict
     return outputs
 end
 
+function classical_rpmd(parameters)
+    simulation, atoms, positions, cell = initialise_simulation(
+        parameters; method=Classical, ring_polymer=true
+    )
+    if haskey(parameters, "initial_conditions_file")
+        single_bead_distribution = jldopen(parameters["initial_conditions_file"])["nqcd_distribution"]
+        positions_wrapper = NQCDistributions.RingPolymerWrapper(single_bead_distribution.position, size(simulation)[3], Int[])
+        velocities_wrapper = NQCDistributions.RingPolymerWrapper(single_bead_distribution.velocity, size(simulation)[3], Int[])
+        nqcd_distribution = DynamicalDistribution(velocities_wrapper, positions_wrapper, size(simulation))
+    else
+        nqcd_distribution = DynamicsVariables(simulation, zeros(size(simulation)), NQCDistributions.RingPolymerWrapper(positions, size(simulation)[3], Int[]))
+    end
+    if !haskey(parameters, "saveat")
+        parameters["saveat"] = get!(parameters, "timestep", 0.1u"fs")
+    end
+    # Assuming no eq time is specified, saveat can be passed as value of parameters["saveat"]
+    if get!(parameters, "equilibration_time", 0.0) == 0.0
+        saveat_arg = parameters["saveat"]
+    else
+        saveat_arg = map(austrip, collect(parameters["equilibration_time"]:parameters["timestep"]:parameters["runtime"]))
+    end
+    GC.gc()
+    traj = run_dynamics(
+        simulation,
+        (0.0u"fs", get!(parameters, "runtime", 0.3u"ps")),
+        nqcd_distribution;
+        dt=get!(parameters, "timestep", 0.1u"fs"),
+        trajectories=get!(parameters, "trajectories", 1),
+        output=OutputDynamicsVariables,
+        ensemble_algorithm=get!(parameters, "ensemble_algorithm", EnsembleSerial()),
+        callback=CallbackSet(DynamicsUtils.CellBoundaryCallback()),
+        saveat=saveat_arg,
+    )
+    # Pack single trajectory into Array to ensure similarity with >1 trajectory
+    if parameters["trajectories"] == 1
+        results = [traj]
+    else
+        results = traj
+    end
+    return (results, parameters)
+end
+
 function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classical, sim_kwargs=Dict{Symbol,Any}(), ring_polymer=false)
     @info "Loading ase (Python)"
     ase_io = pyimport("ase.io")
@@ -727,7 +770,8 @@ function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classi
     if ring_polymer
         simulation = RingPolymerSimulation{method}(
             atoms,
-            isa(complete_model, Nothing) ? nqcd_model : complete_model;
+            isa(complete_model, Nothing) ? nqcd_model : complete_model,
+            parameters["beads"];
             sim_kwargs...
         )
     else
