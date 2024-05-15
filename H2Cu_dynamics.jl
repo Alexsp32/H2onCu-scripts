@@ -431,10 +431,6 @@ function EFT_LDFA_ACE(ase_structure, parameters)
 end
 
 function EFT_ODF_ACE(ase_structure, parameters)
-    throw(KeywordArgError("ACEds models can't be loaded due to incompatibility with ACE1"))
-    exit()
-    #* old function
-    #=
     eft_unit = u"ps^-1"
     # convert ase atoms to julip atoms
     ase_jl = ASE.ASEAtoms(ase_structure)
@@ -443,7 +439,6 @@ function EFT_ODF_ACE(ase_structure, parameters)
     #* eft_model_ace has to be defined in global scope in the running file because ACEds...
     eft_model=FrictionProviders.ACEdsODF(eft_model_ace, Gamma, julip_atoms; friction_unit=eft_unit)
     return ODFriction(eft_model; friction_atoms=parameters["friction_atoms"])
-    =#
 end
 
 function EFT_ODF_SchNet(ase_structure, parameters)
