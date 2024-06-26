@@ -1,9 +1,9 @@
 import ACE
-import ACE1
-import ACEpotentials
-#* using ACEds.FrictionModels can't use due to imcompatibility with ACE1
-#* using ACEds.FrictionModels: Gamma can't use due to incompatibility with ACE1
-#* using ACEds: ac_matrixmodel can't use due to incompatibility with ACE1
+# import ACE1
+# import ACEpotentials
+using ACEds.FrictionModels
+using ACEds.FrictionModels: Gamma
+using ACEds: ac_matrixmodel
 using ASE
 using BSplineKit
 using ClusterScripts
