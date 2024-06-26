@@ -683,7 +683,7 @@ function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classi
     else
         complete_model = nothing
     end
-    @info "Generated PES (+Friction) model: ($complete_model)"
+    @info "Generated PES (+Friction) model"
     # Setup simulation and termination condition.
     # Initialise NCQD Simulation
     set_periodicity!(cell, [true, true, true]) #? Is this actually necessary or already set?
