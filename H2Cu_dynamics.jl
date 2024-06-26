@@ -594,6 +594,7 @@ function mdef_2tm(parameters)
         ensemble_algorithm=get!(parameters, "ensemble_algorithm", EnsembleSerial()),
         callback=CallbackSet(DynamicsUtils.CellBoundaryCallback(), terminate_callback),
         saveat=saveat_arg,
+        savetime=haskey(parameters, "savetime") ? parameters["savetime"] : false,
     )
     # Pack single trajectory into Array to ensure similarity with >1 trajectory
     if parameters["trajectories"] == 1
