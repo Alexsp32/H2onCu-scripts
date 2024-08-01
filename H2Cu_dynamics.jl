@@ -241,10 +241,6 @@ function set_potential_energy_surface(ase_structure, parameters)
         load_schnet_model!(ase_structure, parameters)
     elseif method == "mace"
         load_mace_model!(ase_structure, parameters)
-    elseif method == "mace_nov23"
-        load_nov23_mace_model!(ase_structure, parameters)
-    elseif method == "mace_nov23_committee"
-        load_nov23_mace_models!(ase_structure, parameters)
     elseif method == "ace"
         load_ace_model!(ase_structure, parameters)
     elseif method == "painn"
