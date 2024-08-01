@@ -14,7 +14,6 @@ import ACEpotentials
 #* using ACEds.FrictionModels can't use due to imcompatibility with ACE1
 #* using ACEds.FrictionModels: Gamma can't use due to incompatibility with ACE1
 #* using ACEds: ac_matrixmodel can't use due to incompatibility with ACE1
-using ASE
 using BSplineKit
 using ClusterScripts
 using Combinatorics
@@ -249,40 +248,10 @@ function set_potential_energy_surface(ase_structure, parameters)
         load_schnet_model!(ase_structure, parameters)
     elseif method == "mace"
         load_mace_model!(ase_structure, parameters)
-    elseif method == "ace"
-        load_ace_model!(ase_structure, parameters)
     elseif method == "painn"
         load_painn_model!(ase_structure, parameters)
     elseif method == "reann"
         load_reann_model!(ase_structure, parameters)
-    end
-end
-
-"""
-    load_ace_model!(ase_structure, parameters)
-
-    Initialises an ACE PES model. Returns a JuLIPModel to be further used in a simulation.
-TBW
-"""
-function load_ace_model!(ase_structure, parameters)
-    model_path = haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"]
-    julip_atoms = JuLIP.Atoms(ASE.ASEAtoms(ase_structure)) # Create JuLIP atoms.
-    ace_potential = ACE1.read_dict(load_dict(model_path)["IP"])
-    JuLIP.set_calculator!(julip_atoms, ace_potential)
-    if haskey(parameters, "fixed_atoms")
-        # We have a freeze atoms constraints to apply
-        movement_matrix = Matrix{Float64}(undef, size(ase_structure.get_positions()')...)
-        fill!(movement_matrix, 1.0)
-        movement_matrix[[CartesianIndex(i...) for i in Iterators.product(collect(1:size(ase_structure.get_positions())[end]), collect([parameters["fixed_atoms"]]))]] .= 0
-        return AdiabaticModels.JuLIPModel(julip_atoms, movement_matrix)
-    elseif length(ase_structure.constraints) != 0
-        # Assume a freeze atoms constraint needs to be copied from ase
-        movement_matrix = Matrix{Float64}(undef, size(ase_structure.get_positions()')...)
-        fill!(movement_matrix, 1.0)
-        movement_matrix[[CartesianIndex(i...) for i in Iterators.product(collect(1:size(ase_structure.get_positions())[end]), ase_structure.constraints[1].get_indices() .+ 1)]] .= 0
-        return AdiabaticModels.JuLIPModel(julip_atoms, movement_matrix)
-    else
-        return AdiabaticModels.JuLIPModel(julip_atoms)
     end
 end
 
