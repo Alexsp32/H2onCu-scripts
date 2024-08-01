@@ -6,6 +6,8 @@ ENV["PYTHON"] = PythonCall.python_executable_path() # You know it's about to get
 Pkg.build("PyCall") # PyCall and PythonCall must be using the same interpreter https://juliapy.github.io/PythonCall.jl/stable/pycall/
 # And yes, trust me, there's always some package that needs PyCall instead of PythonCall
 
+using MACEModels # This needs to load first to avoid issues with PyCall
+
 import ACE
 import ACE1
 import ACEpotentials
@@ -33,7 +35,6 @@ using NPZ
 using NQCDynamics
 using NQCBase: NQCBase
 using NQCModels
-using MACEModels
 using Parameters
 using ProgressMeter
 using Unitful
