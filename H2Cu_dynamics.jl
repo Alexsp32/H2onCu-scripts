@@ -25,9 +25,10 @@ using NPZ
 using NQCDynamics
 using NQCBase: NQCBase
 using NQCModels
+using MACEModels
 using Parameters
 using ProgressMeter
-using PyCall
+using PythonCall
 using Unitful
 using UnitfulAtomic
 using SciMLBase
@@ -340,40 +341,20 @@ end
 """
     load_mace_model!(ase_structure, parameters)
 
-    MACE 0.1.0 model loader
-TBW
+    Load a MACE potential using MACEModels.jl
 """
 function load_mace_model!(ase_structure, parameters)
-    mace_calc = pyimport("mace.calculators")
-    mace_calculator = mace_calc.MACECalculator(model_path=haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"], device=get!(parameters, "mace_devicetype", "cpu"))
-    ase_structure.set_calculator(mace_calculator)
-    return nothing
-end
-
-"""
-    load_mace_model!(ase_structure, parameters)
-
-    MACE 0.2.0 as of Nov 2023 model loader
-TBW
-"""
-function load_nov23_mace_model!(ase_structure, parameters)
-    mace_calc = pyimport("mace.calculators")
-    mace_calculator = mace_calc.MACECalculator(model_paths=haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"], device=get!(parameters, "mace_devicetype", "cpu"), default_dtype="float32")
-    ase_structure.set_calculator(mace_calculator)
-    return nothing
-end
-
-"""
-    load_mace_models!(ase_structure, parameters)
-
-    MACE 0.2.0 as of Nov 2023 model loader with support for model committees in newer versions of mace.
-
-"""
-function load_nov23_mace_models!(ase_structure, parameters)
-    mace_calc = pyimport("mace.calculators")
-    mace_calculator = mace_calc.MACECalculator(model_paths=haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"], device=get!(parameters, "mace_devicetype", "cpu"), default_dtype="float32")
-    ase_structure.set_calculator(mace_calculator)
-    return nothing
+    atoms, positions, cell = NQCBase.convert_from_ase_atoms(ase_structure)
+    model_path = get!(parameters, "pes_model_path", get(parameters, "model_path", error("No MACE model path specified")))
+    mace_model = MACEModel(
+        atoms, 
+        cell, 
+        isa(model_path, Vector) ? model_path : [model_path];
+        device=get!(parameters, "mace_devicetype", "cpu"),
+        default_dtype = get!(parameters, "mace_dtype", Float32),
+        mobile_atoms = get(parameters, "mace_mobile_atoms", 1:size(positions, 2)),
+    )
+    
 end
 
 function EFT_LDFA_cube_model(ase_structure, parameters)
