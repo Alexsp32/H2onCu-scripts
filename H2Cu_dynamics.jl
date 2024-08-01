@@ -1,3 +1,11 @@
+using PythonCall
+
+# Every time a Julia script imports Pkg, you know it's going to be a long day.
+import Pkg
+ENV["PYTHON"] = PythonCall.python_executable_path() # You know it's about to get fun
+Pkg.build("PyCall") # PyCall and PythonCall must be using the same interpreter https://juliapy.github.io/PythonCall.jl/stable/pycall/
+# And yes, trust me, there's always some package that needs PyCall instead of PythonCall
+
 import ACE
 import ACE1
 import ACEpotentials
@@ -20,7 +28,6 @@ using JLD2
 using JuLIP
 using JuLIP: set_positions!
 using LinearAlgebra
-using PythonCall
 using NNInterfaces
 using NPZ
 using NQCDynamics
