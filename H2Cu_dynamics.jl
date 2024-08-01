@@ -20,6 +20,7 @@ using JLD2
 using JuLIP
 using JuLIP: set_positions!
 using LinearAlgebra
+using PythonCall
 using NNInterfaces
 using NPZ
 using NQCDynamics
@@ -28,7 +29,6 @@ using NQCModels
 using MACEModels
 using Parameters
 using ProgressMeter
-using PythonCall
 using Unitful
 using UnitfulAtomic
 using SciMLBase
@@ -350,7 +350,6 @@ function load_mace_model!(ase_structure, parameters)
         default_dtype = get!(parameters, "mace_dtype", Float32),
         mobile_atoms = get(parameters, "mace_mobile_atoms", 1:size(positions, 2)),
     )
-    
 end
 
 function EFT_LDFA_cube_model(ase_structure, parameters)
