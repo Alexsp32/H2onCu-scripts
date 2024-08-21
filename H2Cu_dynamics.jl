@@ -1,10 +1,10 @@
 using PythonCall
 
-# Every time a Julia script imports Pkg, you know it's going to be a long day.
-import Pkg
-ENV["PYTHON"] = PythonCall.python_executable_path() # You know it's about to get fun
-Pkg.build("PyCall") # PyCall and PythonCall must be using the same interpreter https://juliapy.github.io/PythonCall.jl/stable/pycall/
-# And yes, trust me, there's always some package that needs PyCall instead of PythonCall
+# # Every time a Julia script imports Pkg, you know it's going to be a long day.
+# import Pkg
+# ENV["PYTHON"] = PythonCall.python_executable_path() # You know it's about to get fun
+# Pkg.build("PyCall") # PyCall and PythonCall must be using the same interpreter https://juliapy.github.io/PythonCall.jl/stable/pycall/
+# # And yes, trust me, there's always some package that needs PyCall instead of PythonCall
 
 using MACEModels # This needs to load first to avoid issues with PyCall
 
@@ -252,7 +252,15 @@ function set_potential_energy_surface(ase_structure, parameters)
         load_painn_model!(ase_structure, parameters)
     elseif method == "reann"
         load_reann_model!(ase_structure, parameters)
+    elseif method == "mpi"
+        load_remote_model(ase_structure, parameters)
+    else
+        error("Unknown PES model: $method")
     end
+end
+
+function load_remote_model(ase_structure, parameters)
+    return Ensemble.RemoteModel(parameters["mpi_config"], NQCBase.convert_from_ase_atoms(ase_structure)[2])
 end
 
 """
@@ -320,13 +328,14 @@ function load_mace_model!(ase_structure, parameters)
     atoms, positions, cell = NQCBase.convert_from_ase_atoms(ase_structure)
     model_path = get!(parameters, "pes_model_path", get(parameters, "model_path", error("No MACE model path specified")))
     mace_model = MACEModel(
-        atoms, 
-        cell, 
+        atoms,
+        cell,
         isa(model_path, Vector) ? model_path : [model_path];
         device=get!(parameters, "mace_devicetype", "cpu"),
-        default_dtype = get!(parameters, "mace_dtype", Float32),
-        mobile_atoms = get(parameters, "mace_mobile_atoms", 1:size(positions, 2)),
+        default_dtype=get!(parameters, "mace_dtype", Float32),
+        mobile_atoms=get(parameters, "mace_mobile_atoms", 1:size(positions, 2)),
     )
+    return mace_model
 end
 
 function EFT_LDFA_cube_model(ase_structure, parameters)
