@@ -326,7 +326,8 @@ end
 """
 function load_mace_model!(ase_structure, parameters)
     atoms, positions, cell = NQCBase.convert_from_ase_atoms(ase_structure)
-    model_path = get!(parameters, "pes_model_path", get(parameters, "model_path", error("No MACE model path specified")))
+    model_path = get!(parameters, "pes_model_path", get(parameters, "model_path", nothing))
+    isnothing(model_path) ? raise(KeyError("pes_model_path")) : nothing
     mace_model = MACEModel(
         atoms,
         cell,
