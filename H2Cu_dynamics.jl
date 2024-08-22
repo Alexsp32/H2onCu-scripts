@@ -334,7 +334,7 @@ function load_mace_model!(ase_structure, parameters)
         isa(model_path, Vector) ? model_path : [model_path];
         device=get!(parameters, "mace_devicetype", "cpu"),
         default_dtype=get!(parameters, "mace_dtype", Float32),
-        mobile_atoms=get(parameters, "mace_mobile_atoms", 1:size(positions, 2)),
+        mobile_atoms=get(parameters, "mace_mobile_atoms", collect(1:size(positions, 2))),
     )
     return mace_model
 end
@@ -377,7 +377,7 @@ function EFT_LDFA_ACE(ase_structure, parameters)
             single_H_structure.pop(i - 1)
         end
     end
-    julip_atoms = JuLIP.Atoms(ASE.ASEAtoms(single_H_structure))
+    julip_atoms = JuLIP.Atoms(System(NQCBase.convert_from_ase_atoms(single_H_structure)...))
     eft_model = ACE1.read_dict(load_dict(parameters["eft_model_path"])["IP"])
     JuLIP.set_calculator!(julip_atoms, eft_model)
     density_model = AceLDFA(AdiabaticModels.JuLIPModel(julip_atoms); density_unit=u"Å^-3")
