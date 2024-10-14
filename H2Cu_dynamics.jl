@@ -506,6 +506,11 @@ function langevin_dynamics(parameters::Dict{String,Any})
     else
         saveat_arg = map(austrip, collect(parameters["equilibration_time"]:parameters["timestep"]:parameters["runtime"]))
     end
+    if haskey(parameters, "run_dynamics_kwargs")
+        dynamics_kwargs = parameters["run_dynamics_kwargs"]
+    else
+        dynamics_kwargs = ()
+    end
     # Now run dynamics
     traj = run_dynamics(
         simulation,
@@ -516,7 +521,8 @@ function langevin_dynamics(parameters::Dict{String,Any})
         saveat=saveat_arg, # This might slow down calculations, check if actually useful.
         output=haskey(parameters, "outputs") ? parameters["outputs"] : (OutputDynamicsVariables, OutputPotentialEnergy), # Positions, velocities and
         ensemble_algorithm=get!(parameters, "ensemble_algorithm", EnsembleSerial()),
-        callbacks=DynamicsUtils.CellBoundaryCallback()
+        callbacks=DynamicsUtils.CellBoundaryCallback(),
+        dynamics_kwargs...
     )
     # Pack single trajectory into Array to ensure similarity with >1 trajectory
     if parameters["trajectories"] == 1
@@ -583,6 +589,11 @@ function mdef_2tm(parameters)
     else
         saveat_arg = map(austrip, collect(parameters["equilibration_time"]:parameters["timestep"]:parameters["runtime"]))
     end
+    if haskey(parameters, "run_dynamics_kwargs")
+        run_dynamics_kwargs = parameters["run_dynamics_kwargs"]
+    else
+        run_dynamics_kwargs = ()
+    end
     GC.gc()
     traj = run_dynamics(
         simulation,
@@ -594,7 +605,7 @@ function mdef_2tm(parameters)
         ensemble_algorithm=get!(parameters, "ensemble_algorithm", EnsembleSerial()),
         callback=CallbackSet(DynamicsUtils.CellBoundaryCallback(), terminate_callback),
         saveat=saveat_arg,
-        savetime=haskey(parameters, "savetime") ? parameters["savetime"] : false,
+        run_dynamics_kwargs...
     )
     # Pack single trajectory into Array to ensure similarity with >1 trajectory
     if parameters["trajectories"] == 1
