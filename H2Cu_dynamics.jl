@@ -109,6 +109,18 @@ function (desorption_terminator::DesorptionTerminator)(u, t, integrator)::Bool
     return false
 end
 
+mutable struct NoiseOutputCallback
+    noise::Vector{Matrix{Float64}}
+end
+
+NoiseOutputCallback() = NoiseOutputCallback(Float64[])
+
+function (callback::NoiseOutputCallback)(u,t,integrator)
+    push!(callback.noise, integrator.W.dW)
+    return false
+end
+
+SaveCallbacks(sol, i) = sol.prob.callback
 
 function create_langevin_distribution(filename::String, trajectory)
     distribution = DynamicalDistribution(map(x -> get_velocities(x), trajectory), map(x -> NQCDynamics.get_positions(x), trajectory), size(NQCDynamics.get_positions(trajectory[1])))
