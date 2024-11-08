@@ -597,7 +597,7 @@ function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classi
         # Apply phonon thermostat to selected atoms if specified
         if get(parameters, "2TM-T_ph", false)
             T_ph_function = T_function_from_file(parameters["2TM-file"], 3)
-            phonon_indices = !haskey(parameters, "T_ph_indices") ? @error "Please specify atoms to apply T_ph to by setting T_ph_indices" : parameters["T_ph_indices"]
+            phonon_indices = !haskey(parameters, "T_ph_indices") ? throw(ValueError("Please specify atoms to apply T_ph to by setting T_ph_indices")) : parameters["T_ph_indices"]
             push!(thermostats, Thermostat(T_ph_function, phonon_indices)) # Apply T_ph profile
             push!(subsystems, Subsystem(ConstantFriction(size(initial_positions,1), parameters["γ_phonon"], phonon_indices))) # Apply phononic friction
         end
