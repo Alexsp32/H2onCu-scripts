@@ -593,7 +593,7 @@ function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classi
         complete_model = isa(EFT_model, Nothing) ? nqcd_model : CompositeFrictionModel(nqcd_model, EFT_model)
     else haskey(parameters, "2TM-file")
         thermostats = Thermostat[]
-        subsystems = [Subsystem(nqcd_model, 1:size(initial_positions,2))]
+        subsystems = Subsystem[Subsystem(nqcd_model, 1:size(initial_positions,2))]
         # Apply phonon thermostat to selected atoms if specified
         if get(parameters, "2TM-T_ph", false)
             T_ph_function = T_function_from_file(parameters["2TM-file"], 3)
