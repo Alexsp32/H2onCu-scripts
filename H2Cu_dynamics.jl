@@ -591,27 +591,27 @@ function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classi
         thermostats = parameters["temperature"]
         @info "Combining PES and friction models if necessary"
         complete_model = isa(EFT_model, Nothing) ? nqcd_model : CompositeFrictionModel(nqcd_model, EFT_model)
-    elseif haskey(parameters, "2TM-file") && !parameters["2TM-T_ph"]
-        # Electronic temperature only --> Apply to entire system
-        thermostats = T_function_from_file(parameters["2TM-file"])
-        complete_model = CompositeFrictionModel(nqcd_model, EFT_model)
-    elseif parameters["2TM-T_ph"]
-        # Complete 2TM --> Split thermostats
-        T_el_function = T_function_from_file(parameters["2TM-file"], 2)
-        T_ph_function = T_function_from_file(parameters["2TM-file"], 3)
-        phonon_indices = !haskey(parameters, "T_ph_indices") ? symdiff(1:length(ase_structure), parameters["friction_atoms"]) : parameters["T_ph_indices"]
-        thermostats = [Thermostat(T_el_function, parameters["friction_atoms"]), Thermostat(T_ph_function, phonon_indices)]
+    else haskey(parameters, "2TM-file")
+        thermostats = Thermostat[]
+        subsystems = [Subsystem(nqcd_model, 1:size(initial_positions,2))]
+        # Apply phonon thermostat to selected atoms if specified
+        if get(parameters, "2TM-T_ph", false)
+            T_ph_function = T_function_from_file(parameters["2TM-file"], 3)
+            phonon_indices = !haskey(parameters, "T_ph_indices") ? @error "Please specify atoms to apply T_ph to by setting T_ph_indices" : parameters["T_ph_indices"]
+            push!(thermostats, Thermostat(T_ph_function, phonon_indices)) # Apply T_ph profile
+            push!(subsystems, Subsystem(ConstantFriction(size(initial_positions,1), parameters["γ_phonon"], phonon_indices))) # Apply phononic friction
+        end
+        if get(parameters, "2TM-T_el", true) # Default is to apply T_el in order to maintain backwards compat with previous configs. 
+            T_el_function = T_function_from_file(parameters["2TM-file"], 2)
+            atom_indices = get!(parameters, "T_el_indices", parameters["friction_atoms"])
+            push!(thermostats, Thermostat(T_el_function, atom_indices)) # Assign T_el profile
+            push!(subsystems, EFT_model, atom_indices) # Apply electronic friction
+        end
         remaining_atoms = symdiff(1:size(initial_positions)[2], [t.indices for t in thermostats]...)
-        if remaining_atoms != [] # If any atoms aren't assigned to a thermostat, freeze them.
+        if remaining_atoms != [] # If any atoms aren't assigned to a thermostat, make them classical.
             push!(thermostats, Thermostat(0.0, remaining_atoms))
         end
-        complete_model = CompositeModel(
-            Subsystem(nqcd_model, 1:size(initial_positions)[2]), # PES
-            Subsystem(EFT_model, parameters["friction_atoms"]), # Electronic friction
-            Subsystem(ConstantFriction(size(initial_positions)[1], parameters["γ_phonon"]), phonon_indices) # Phononic friction
-        )
-    else
-        complete_model = nothing
+        complete_model = CompositeModel(subsystems...) # Build model for simulations
     end
     @info "Generated PES (+Friction) model"
     # Setup simulation and termination condition.
