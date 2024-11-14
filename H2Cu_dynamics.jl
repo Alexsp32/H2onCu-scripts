@@ -569,8 +569,8 @@ function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classi
     nqcd_model = set_potential_energy_surface(ase_structure, parameters) # Choose the desired ML model type and attach its calculator to ase_structure
     nqcd_model = typeof(nqcd_model) == Nothing ? AdiabaticASEModel(ase_structure) : nqcd_model
     @info "Assigning friction model if friction_atoms is set"
-    # Assign the chosen EFT model if friction_atoms are set.
-    EFT_model = haskey(parameters, "friction_atoms") ? load_EFT_model(ase_structure, parameters) : nothing
+    # Assign the chosen EFT model if friction_type is provided. If no friction_atoms are specified, apply to all H-atoms. 
+    EFT_model = haskey(parameters, "friction_type") ? load_EFT_model(ase_structure, parameters) : nothing
     """
     T_function_from_file(file::String, index::Int=2)
 
