@@ -3,7 +3,6 @@ import ACE
 # import ACEpotentials
 using ACEds.FrictionModels
 using ACEds.FrictionModels: Gamma
-using ACEds: ac_matrixmodel
 using ASE
 using BSplineKit
 using ClusterScripts
