@@ -1,3 +1,4 @@
+using PythonCall
 import ACE
 import ACE1
 import ACEpotentials
@@ -23,11 +24,11 @@ using LinearAlgebra
 using NNInterfaces
 using NPZ
 using NQCDynamics
-using NQCBase: NQCBase
+using NQCBase
 using NQCModels
+using MACEModels
 using Parameters
 using ProgressMeter
-using PyCall
 using Unitful
 using UnitfulAtomic
 using SciMLBase
@@ -157,14 +158,8 @@ function set_potential_energy_surface(ase_structure, parameters)
         load_mace_model!(ase_structure, parameters)
     elseif method == "mace_nov23"
         load_nov23_mace_model!(ase_structure, parameters)
-    elseif method == "mace_nov23_committee"
-        load_nov23_mace_models!(ase_structure, parameters)
     elseif method == "ace"
         load_ace_model!(ase_structure, parameters)
-    elseif method == "painn"
-        load_painn_model!(ase_structure, parameters)
-    elseif method == "reann"
-        load_reann_model!(ase_structure, parameters)
     end
 end
 
@@ -197,44 +192,6 @@ function load_ace_model!(ase_structure, parameters)
 end
 
 """
-    load_painn_model!(ase_structure, parameters)
-
-    Loads a PaiNN PES model by applying the ase calculator to ase_structure.
-TBW
-"""
-function load_painn_model!(ase_structure, parameters)
-    torch = pyimport("torch")
-    schnet_interfaces = pyimport("schnetpack.interfaces")
-    schnet_transform = pyimport("schnetpack.transform")
-    model_path = haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"]
-    painn_model = torch.load(model_path, map_location=get!(parameters, "painn_device", "cpu")).to(parameters["painn_device"]) # PaiNN-device sounds like I want to torture someone
-    painn_calculator = schnet_interfaces.SpkCalculator(
-        model=painn_model,
-        converter=schnet_interfaces.AtomsConverter(neighbor_list=schnet_transform.ASENeighborList(cutoff=get!(parameters, "PES_PaiNN_neighbourlist_cutoff", 4.0)), dtype=torch.float32),
-        energy_units="eV",
-        forces_units="ev/Angstrom"
-    )
-    ase_structure.set_calculator(painn_calculator)
-    return nothing
-end
-
-"""
-    load_reann_model!(ase_structure, parameters)
-
-    Loads a REANN ML PES and sets the calculator for the ASE structure specified.
-    Returns nothing since loading some models requires actually returning something.
-TBW
-"""
-function load_reann_model!(ase_structure, parameters)
-    reann = pyimport("ase.calculators.reann")
-    pbc = [1, 1, 1] # Periodic boundary conditions
-    model_path = haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"]
-    reann_calc = reann.REANN(device="cpu", atomtype=parameters["REANN_atom_types"], period=pbc, nn=model_path)
-    ase_structure.set_calculator(reann_calc)
-    return nothing
-end
-
-"""
     load_schnet_model!(ase_structure, parameters)
 
     SchNet model loader.
@@ -255,40 +212,23 @@ end
 """
     load_mace_model!(ase_structure, parameters)
 
-    MACE 0.1.0 model loader
-TBW
-"""
-function load_mace_model!(ase_structure, parameters)
-    mace_calc = pyimport("mace.calculators")
-    mace_calculator = mace_calc.MACECalculator(model_path=haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"], device=get!(parameters, "mace_devicetype", "cpu"))
-    ase_structure.set_calculator(mace_calculator)
-    return nothing
-end
-
-"""
-    load_mace_model!(ase_structure, parameters)
-
-    MACE 0.2.0 as of Nov 2023 model loader
-TBW
+Load a MACEModels.jl version of a MACE model. (Requires models to be saved in mace ≥ v0.3.3)
 """
 function load_nov23_mace_model!(ase_structure, parameters)
-    mace_calc = pyimport("mace.calculators")
-    mace_calculator = mace_calc.MACECalculator(model_paths=haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"], device=get!(parameters, "mace_devicetype", "cpu"), default_dtype="float32")
-    ase_structure.set_calculator(mace_calculator)
-    return nothing
-end
-
-"""
-    load_mace_models!(ase_structure, parameters)
-
-    MACE 0.2.0 as of Nov 2023 model loader with support for model committees in newer versions of mace.
-
-"""
-function load_nov23_mace_models!(ase_structure, parameters)
-    mace_calc = pyimport("mace.calculators")
-    mace_calculator = mace_calc.MACECalculator(model_paths=haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"], device=get!(parameters, "mace_devicetype", "cpu"), default_dtype="float32")
-    ase_structure.set_calculator(mace_calculator)
-    return nothing
+    atoms, positions, cell = NQCBase.convert_from_ase_atoms(ase_structure)
+    model_paths = parameters["pes_model_path"]
+    if isa(model_paths, String) # Ensure model path is always a vector
+        model_paths = [model_paths]
+    end
+    model = MACEModel(
+        atoms,
+        cell,
+        model_paths;
+        device = get!(parameters, "mace_devicetype", "cpu"),
+        default_dtype = Float32,
+        mobile_atoms = get!(parameters, "mace_mobileatoms", 18:56 |> collect)
+    )
+    return model
 end
 
 function EFT_LDFA_cube_model(ase_structure, parameters)
@@ -304,11 +244,11 @@ function EFT_LDFA_scikit(ase_structure, parameters)
     pd = pyimport("pandas")
     density = SciKitDensity(
         descriptors.SOAP(
-            species=unique(ase_structure.symbols),
+            species = ase_structure.symbols |> unique |> PyList,
             periodic=true,
-            r_cut=get!(parameters, "EFT_SOAP_rcut", 7.0),
-            n_max=get!(parameters, "EFT_SOAP_nmax", 12),
-            l_max=get!(parameters, "EFT_SOAP_lmax", 8),
+            r_cut = get!(parameters, "EFT_SOAP_rcut", 7.0),
+            n_max = get!(parameters, "EFT_SOAP_nmax", 12),
+            l_max = get!(parameters, "EFT_SOAP_lmax", 8),
             average="off",
         ),
         pd.read_pickle(parameters["eft_density_pickle"]),
@@ -329,8 +269,9 @@ function EFT_LDFA_ACE(ase_structure, parameters)
             single_H_structure.pop(i - 1)
         end
     end
-    julip_atoms = JuLIP.Atoms(ASE.ASEAtoms(single_H_structure))
-    eft_model = ACE1.read_dict(load_dict(parameters["eft_model_path"])["IP"])
+    ase_io.write("ace_ldfa_tmp.xyz", single_H_structure)
+    julip_atoms = ACE1.read_extxyz("ace_ldfa_tmp.xyz")
+    eft_model = ACE1.read_dict(load_dict(parameters["eft_model_path"])["IP"]
     JuLIP.set_calculator!(julip_atoms, eft_model)
     density_model = AceLDFA(AdiabaticModels.JuLIPModel(julip_atoms); density_unit=u"Å^-3")
     return LDFAFriction(density_model, atoms; friction_atoms=parameters["friction_atoms"])
