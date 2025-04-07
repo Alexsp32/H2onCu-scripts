@@ -1,9 +1,10 @@
+using PythonCall
 import ACE
+import ASE
 # import ACE1
 # import ACEpotentials
 using ACEds.FrictionModels
 using ACEds.FrictionModels: Gamma
-using ASE
 using BSplineKit
 using ClusterScripts
 using Combinatorics
@@ -22,11 +23,10 @@ using LinearAlgebra
 using NNInterfaces
 using NPZ
 using NQCDynamics
-using NQCBase: NQCBase
+using NQCBase
 using NQCModels
 using Parameters
 using ProgressMeter
-using PyCall
 using Unitful
 using UnitfulAtomic
 using SciMLBase
@@ -45,103 +45,6 @@ function driver(parameters)
 end
 
 #! Utility functions
-function generate_angle_triplets(config::Any, sim::Simulation, species1, species2, species3; args...)
-    # We need to distinguish four cases:
-    if species1 == species2 == species3
-        # Here we are interested in three unique permutations per combination of three indices.
-        combinations = collect(combinations(findall(sim.atoms.types .== species1), 3))
-        permutations = collect.(permutations.(combinations, 3)) # This includes reversions
-        permutations = map(x -> x[begin:3], permutations)
-        triplets = map(x -> vcat(x...), permutations)
-        return triplets
-    elseif species1 != species2 != species3
-        # In this case, we need to look at all combinations of species1-species2-species3 triplets
-        triplets = collect(Base.product(findall(sim.atoms.types .== species1), findall(sim.atoms.types .== species2), findall(sim.atoms.types .== species3)))
-        return vec(map(x -> vcat(x...), triplets))
-    elseif species1 == species2
-        # Now we need to consider permutations of species1 & 2 combined with species3
-        species1_permutations = permutations(findall(sim.atoms.types .== species1), 2)
-        combinations = Base.product(species1_permutations, findall(sim.atoms.types .== species3))
-        triplets = map(x -> vcat(x...), collect(combinations))
-        return vec(triplets)
-    elseif species2 == species3
-        # Same as above, but with different indices
-        species2_permutations = permutations(findall(sim.atoms.types .== species2), 2)
-        combinations = Base.product(findall(sim.atoms.types .== species1), species2_permutations)
-        triplets = map(x -> vcat(x...), collect(combinations))
-        return vec(triplets)
-    elseif species1 == species3
-        # Same as above
-        species1_permutations = permutations(findall(sim.atoms.types .== species1), 2)
-        combinations = Base.product(species1_permutations, findall(sim.atoms.types .== species2))
-        triplets = map(x -> [x[1][1], x[2], x[1][2]], collect(combinations))
-        return vec(triplets)
-    end
-end
-
-"""
-    all_distances(config::Any, sim::AbstractSimulation, species1, species2; args...)
-
-Iterate through all (PBC compliant) distances
-"""
-function all_distances(config::Any, sim::Simulation, species1, species2; r_cut=10.0u"Å", args...)
-    # Generate unique combinations of atomic distances.
-    if species1 == species2
-        combinations = Combinatorics.combinations(findall(sim.atoms.types .== species1), 2) # Find all non-redundant 2 combinations of species1==species2 indices.
-    else
-        combinations = Iterators.product(findall(sim.atoms.types .== species1), findall(sim.atoms.types .== species2)) # Find all non-redundant combinations of species1 != species2 indices.
-    end
-    # Distance iterator exists now.
-    pbc_distances = []
-    for combination in combinations
-        dist = NQCDynamics.Structure.pbc_distance(config, combination..., sim; args...)
-        if dist < r_cut
-            push!(pbc_distances, dist)
-        end
-    end
-    return pbc_distances
-end
-
-function all_distances(trj::Vector, sim::Simulation, species1, species2; args...)
-    pbc_distances = []
-    for config in trj
-        pbc_distances = vcat(pbc_distances, all_distances(config, sim, species1, species2; args...))
-    end
-    return pbc_distances
-end
-
-function pbc_neighbour_positions(positions::Any, index::Int, distance_in_au, simulation::NQCDynamics.AbstractSimulation)
-    distances = map(x -> NQCDynamics.Structure.pbc_distance(positions, index, x, simulation), collect(1:length(simulation.atoms)))
-    neighbours = findall(x -> x ≤ auconvert(u"Å", distance_in_au) && x != 0.0u"Å", distances)
-    positions_matrix = NQCDynamics.get_positions(positions)
-    translations = [[i, j, k] for i in -1:1 for j in -1:1 for k in -1:1]
-    relative_positions_pbc = zeros((NQCModels.dofs(simulation), length(neighbours)))
-    for j in eachindex(neighbours)
-        which_translation = argmin(map(x -> norm(positions_matrix[:, index] - positions_matrix[:, neighbours[j]] + simulation.cell.vectors * x), translations))
-        relative_positions_pbc[:, j] .= positions_matrix[:, index] - positions_matrix[:, neighbours[j]] + simulation.cell.vectors * translations[which_translation]
-    end
-    return (relative_positions_pbc, simulation.atoms.types[neighbours])
-end
-
-function extract_from_distribution!(parameters)
-    nqcd_distribution = jldopen(parameters["initial_conditions_file"])["nqcd_distribution"]
-    parameters["DynamicsVariables"] = rand(nqcd_distribution)
-    return parameters
-end
-
-"""
-    export_trajectory(fname, trj, sim)
-
-    Exports a single trajectory as the filename given in `fname` from the trajectory `trj` with the simulation parameters `sim`
-TBW
-"""
-function export_trajectory(fname, trj, sim; to_export=:OutputDynamicsVariables)
-    ase_io = pyimport("ase.io")
-    positions = map(NQCDynamics.get_positions, trj[to_export])
-    ase_trj = NQCBase.convert_to_ase_atoms(sim.atoms, positions, sim.cell)
-    ase_io.write(fname, ase_trj)
-end
-
 """
     cu_surface_z(config, indices)
 
@@ -205,6 +108,18 @@ function (desorption_terminator::DesorptionTerminator)(u, t, integrator)::Bool
     return false
 end
 
+mutable struct NoiseOutputCallback
+    noise::Vector{Matrix{Float64}}
+end
+
+NoiseOutputCallback() = NoiseOutputCallback(Float64[])
+
+function (callback::NoiseOutputCallback)(u,t,integrator)
+    push!(callback.noise, integrator.W.dW)
+    return false
+end
+
+SaveCallbacks(sol, i) = sol.prob.callback
 
 function create_langevin_distribution(filename::String, trajectory)
     distribution = DynamicalDistribution(map(x -> get_velocities(x), trajectory), map(x -> NQCDynamics.get_positions(x), trajectory), size(NQCDynamics.get_positions(trajectory[1])))
@@ -241,14 +156,8 @@ function set_potential_energy_surface(ase_structure, parameters)
         load_mace_model!(ase_structure, parameters)
     elseif method == "mace_nov23"
         load_nov23_mace_model!(ase_structure, parameters)
-    elseif method == "mace_nov23_committee"
-        load_nov23_mace_models!(ase_structure, parameters)
     elseif method == "ace"
         load_ace_model!(ase_structure, parameters)
-    elseif method == "painn"
-        load_painn_model!(ase_structure, parameters)
-    elseif method == "reann"
-        load_reann_model!(ase_structure, parameters)
     end
 end
 
@@ -281,44 +190,6 @@ function load_ace_model!(ase_structure, parameters)
 end
 
 """
-    load_painn_model!(ase_structure, parameters)
-
-    Loads a PaiNN PES model by applying the ase calculator to ase_structure.
-TBW
-"""
-function load_painn_model!(ase_structure, parameters)
-    torch = pyimport("torch")
-    schnet_interfaces = pyimport("schnetpack.interfaces")
-    schnet_transform = pyimport("schnetpack.transform")
-    model_path = haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"]
-    painn_model = torch.load(model_path, map_location=get!(parameters, "painn_device", "cpu")).to(parameters["painn_device"]) # PaiNN-device sounds like I want to torture someone
-    painn_calculator = schnet_interfaces.SpkCalculator(
-        model=painn_model,
-        converter=schnet_interfaces.AtomsConverter(neighbor_list=schnet_transform.ASENeighborList(cutoff=get!(parameters, "PES_PaiNN_neighbourlist_cutoff", 4.0)), dtype=torch.float32),
-        energy_units="eV",
-        forces_units="ev/Angstrom"
-    )
-    ase_structure.set_calculator(painn_calculator)
-    return nothing
-end
-
-"""
-    load_reann_model!(ase_structure, parameters)
-
-    Loads a REANN ML PES and sets the calculator for the ASE structure specified.
-    Returns nothing since loading some models requires actually returning something.
-TBW
-"""
-function load_reann_model!(ase_structure, parameters)
-    reann = pyimport("ase.calculators.reann")
-    pbc = [1, 1, 1] # Periodic boundary conditions
-    model_path = haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"]
-    reann_calc = reann.REANN(device="cpu", atomtype=parameters["REANN_atom_types"], period=pbc, nn=model_path)
-    ase_structure.set_calculator(reann_calc)
-    return nothing
-end
-
-"""
     load_schnet_model!(ase_structure, parameters)
 
     SchNet model loader.
@@ -339,36 +210,10 @@ end
 """
     load_mace_model!(ase_structure, parameters)
 
-    MACE 0.1.0 model loader
-TBW
-"""
-function load_mace_model!(ase_structure, parameters)
-    mace_calc = pyimport("mace.calculators")
-    mace_calculator = mace_calc.MACECalculator(model_path=haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"], device=get!(parameters, "mace_devicetype", "cpu"))
-    ase_structure.set_calculator(mace_calculator)
-    return nothing
-end
-
-"""
-    load_mace_model!(ase_structure, parameters)
-
     MACE 0.2.0 as of Nov 2023 model loader
 TBW
 """
 function load_nov23_mace_model!(ase_structure, parameters)
-    mace_calc = pyimport("mace.calculators")
-    mace_calculator = mace_calc.MACECalculator(model_paths=haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"], device=get!(parameters, "mace_devicetype", "cpu"), default_dtype="float32")
-    ase_structure.set_calculator(mace_calculator)
-    return nothing
-end
-
-"""
-    load_mace_models!(ase_structure, parameters)
-
-    MACE 0.2.0 as of Nov 2023 model loader with support for model committees in newer versions of mace.
-
-"""
-function load_nov23_mace_models!(ase_structure, parameters)
     mace_calc = pyimport("mace.calculators")
     mace_calculator = mace_calc.MACECalculator(model_paths=haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"], device=get!(parameters, "mace_devicetype", "cpu"), default_dtype="float32")
     ase_structure.set_calculator(mace_calculator)
@@ -388,11 +233,11 @@ function EFT_LDFA_scikit(ase_structure, parameters)
     pd = pyimport("pandas")
     density = SciKitDensity(
         descriptors.SOAP(
-            species=unique(ase_structure.symbols),
+            species = ase_structure.symbols |> unique |> PyList,
             periodic=true,
-            r_cut=get!(parameters, "EFT_SOAP_rcut", 7.0),
-            n_max=get!(parameters, "EFT_SOAP_nmax", 12),
-            l_max=get!(parameters, "EFT_SOAP_lmax", 8),
+            r_cut = get!(parameters, "EFT_SOAP_rcut", 7.0),
+            n_max = get!(parameters, "EFT_SOAP_nmax", 12),
+            l_max = get!(parameters, "EFT_SOAP_lmax", 8),
             average="off",
         ),
         pd.read_pickle(parameters["eft_density_pickle"]),
@@ -413,7 +258,8 @@ function EFT_LDFA_ACE(ase_structure, parameters)
             single_H_structure.pop(i - 1)
         end
     end
-    julip_atoms = JuLIP.Atoms(ASE.ASEAtoms(single_H_structure))
+    ase_io.write("ace_ldfa_tmp.xyz", single_H_structure)
+    julip_atoms = ACE1.read_extxyz("ace_ldfa_tmp.xyz")
     eft_model = ACE1.read_dict(load_dict(parameters["eft_model_path"])["IP"])
     JuLIP.set_calculator!(julip_atoms, eft_model)
     density_model = AceLDFA(AdiabaticModels.JuLIPModel(julip_atoms); density_unit=u"Å^-3")
@@ -649,8 +495,8 @@ function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classi
     nqcd_model = set_potential_energy_surface(ase_structure, parameters) # Choose the desired ML model type and attach its calculator to ase_structure
     nqcd_model = typeof(nqcd_model) == Nothing ? AdiabaticASEModel(ase_structure) : nqcd_model
     @info "Assigning friction model if friction_atoms is set"
-    # Assign the chosen EFT model if friction_atoms are set.
-    EFT_model = haskey(parameters, "friction_atoms") ? load_EFT_model(ase_structure, parameters) : nothing
+    # Assign the chosen EFT model if friction_type is provided. If no friction_atoms are specified, apply to all H-atoms. 
+    EFT_model = haskey(parameters, "friction_type") ? load_EFT_model(ase_structure, parameters) : nothing
     """
     T_function_from_file(file::String, index::Int=2)
 
@@ -671,27 +517,27 @@ function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classi
         thermostats = parameters["temperature"]
         @info "Combining PES and friction models if necessary"
         complete_model = isa(EFT_model, Nothing) ? nqcd_model : CompositeFrictionModel(nqcd_model, EFT_model)
-    elseif haskey(parameters, "2TM-file") && !parameters["2TM-T_ph"]
-        # Electronic temperature only --> Apply to entire system
-        thermostats = T_function_from_file(parameters["2TM-file"])
-        complete_model = CompositeFrictionModel(nqcd_model, EFT_model)
-    elseif parameters["2TM-T_ph"]
-        # Complete 2TM --> Split thermostats
-        T_el_function = T_function_from_file(parameters["2TM-file"], 2)
-        T_ph_function = T_function_from_file(parameters["2TM-file"], 3)
-        phonon_indices = !haskey(parameters, "T_ph_indices") ? symdiff(1:length(ase_structure), parameters["friction_atoms"]) : parameters["T_ph_indices"]
-        thermostats = [Thermostat(T_el_function, parameters["friction_atoms"]), Thermostat(T_ph_function, phonon_indices)]
+    else haskey(parameters, "2TM-file")
+        thermostats = Thermostat[]
+        subsystems = Subsystem[Subsystem(nqcd_model, 1:size(initial_positions,2))]
+        # Apply phonon thermostat to selected atoms if specified
+        if get(parameters, "2TM-T_ph", false)
+            T_ph_function = T_function_from_file(parameters["2TM-file"], 3)
+            phonon_indices = !haskey(parameters, "T_ph_indices") ? throw(ValueError("Please specify atoms to apply T_ph to by setting T_ph_indices")) : parameters["T_ph_indices"]
+            push!(thermostats, Thermostat(T_ph_function, phonon_indices)) # Apply T_ph profile
+            push!(subsystems, Subsystem(ConstantFriction(size(initial_positions,1), parameters["γ_phonon"]), phonon_indices)) # Apply phononic friction
+        end
+        if get(parameters, "2TM-T_el", true) # Default is to apply T_el in order to maintain backwards compat with previous configs. 
+            T_el_function = T_function_from_file(parameters["2TM-file"], 2)
+            atom_indices = get!(parameters, "T_el_indices", parameters["friction_atoms"])
+            push!(thermostats, Thermostat(T_el_function, atom_indices)) # Assign T_el profile
+            push!(subsystems, EFT_model, atom_indices) # Apply electronic friction
+        end
         remaining_atoms = symdiff(1:size(initial_positions)[2], [t.indices for t in thermostats]...)
-        if remaining_atoms != [] # If any atoms aren't assigned to a thermostat, freeze them.
+        if remaining_atoms != [] # If any atoms aren't assigned to a thermostat, make them classical.
             push!(thermostats, Thermostat(0.0, remaining_atoms))
         end
-        complete_model = CompositeModel(
-            Subsystem(nqcd_model, 1:size(initial_positions)[2]), # PES
-            Subsystem(EFT_model, parameters["friction_atoms"]), # Electronic friction
-            Subsystem(ConstantFriction(size(initial_positions)[1], parameters["γ_phonon"]), phonon_indices) # Phononic friction
-        )
-    else
-        complete_model = nothing
+        complete_model = CompositeModel(subsystems...) # Build model for simulations
     end
     @info "Generated PES (+Friction) model"
     # Setup simulation and termination condition.
