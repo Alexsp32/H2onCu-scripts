@@ -1,5 +1,6 @@
 using PythonCall
 import ACE
+import ASE
 # import ACE1
 # import ACEpotentials
 using ACEds.FrictionModels
@@ -168,7 +169,7 @@ TBW
 """
 function load_ace_model!(ase_structure, parameters)
     model_path = haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"]
-    julip_atoms = ACE.read_extxyz(parameters["starting_structure"]) # Create JuLIP atoms.
+    julip_atoms = JuLIP.Atoms(ASE.ASEAtoms(ase_structure)) # Create JuLIP atoms.
     ace_potential = ACE1.read_dict(load_dict(model_path)["IP"])
     JuLIP.set_calculator!(julip_atoms, ace_potential)
     if haskey(parameters, "fixed_atoms")
@@ -268,14 +269,8 @@ end
 function EFT_ODF_ACE(ase_structure, parameters)
     eft_unit = u"ps^-1"
     # convert ase atoms to julip atoms
-    ase_io = pyimport("ase.io")
-    structure_path = parameters["starting_structure"]
-    if split(structure_path, ".")[end] != "xyz"
-        structure = ase_io.read(parameters["starting_structure"])
-        structure_path = "tmp_structure.xyz"
-        ase_io.write(structure_path, structure)
-    end
-    julip_atoms = ACE.read_extxyz(structure_path)
+    ase_jl = ASE.ASEAtoms(ase_structure)
+    julip_atoms = JuLIP.Atoms(ase_jl)
     # create an ACEds model object
     #* eft_model_ace has to be defined in global scope in the running file because ACEds...
     eft_model = FrictionProviders.ACEdsODF(eft_model_ace, Gamma, julip_atoms; friction_unit=eft_unit)
