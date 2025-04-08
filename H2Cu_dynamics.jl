@@ -1,6 +1,5 @@
 using PythonCall
 import ACE
-import ASE
 # import ACE1
 # import ACEpotentials
 using ACEds.FrictionModels
@@ -169,7 +168,7 @@ TBW
 """
 function load_ace_model!(ase_structure, parameters)
     model_path = haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"]
-    julip_atoms = JuLIP.Atoms(ASE.ASEAtoms(ase_structure)) # Create JuLIP atoms.
+    julip_atoms = ACE.read_extxyz(parameters["starting_structure"]) # Create JuLIP atoms.
     ace_potential = ACE1.read_dict(load_dict(model_path)["IP"])
     JuLIP.set_calculator!(julip_atoms, ace_potential)
     if haskey(parameters, "fixed_atoms")
