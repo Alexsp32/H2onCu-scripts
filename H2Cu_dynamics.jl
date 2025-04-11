@@ -269,7 +269,7 @@ function EFT_LDFA_ACE(ase_structure, parameters)
         end
     end
     ase_io.write("ace_ldfa_tmp.xyz", single_H_structure)
-    julip_atoms = ACE1.read_extxyz("ace_ldfa_tmp.xyz")
+    julip_atoms = ACE1.read_extxyz("ace_ldfa_tmp.xyz")[1]
     eft_model = ACE1.read_dict(load_dict(parameters["eft_model_path"])["IP"])
     JuLIP.set_calculator!(julip_atoms, eft_model)
     density_model = AceLDFA(AdiabaticModels.JuLIPModel(julip_atoms); density_unit=u"Å^-3")
@@ -532,24 +532,24 @@ function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classi
         @info "Combining PES and friction models if necessary"
         complete_model = isa(EFT_model, Nothing) ? nqcd_model : CompositeFrictionModel(nqcd_model, EFT_model)
     else haskey(parameters, "2TM-file")
-        thermostats = Thermostat[]
+        thermostats = TemperatureSetting[]
         subsystems = Subsystem[Subsystem(nqcd_model, 1:size(initial_positions,2))]
         # Apply phonon thermostat to selected atoms if specified
         if get(parameters, "2TM-T_ph", false)
             T_ph_function = T_function_from_file(parameters["2TM-file"], 3)
             phonon_indices = !haskey(parameters, "T_ph_indices") ? throw(ValueError("Please specify atoms to apply T_ph to by setting T_ph_indices")) : parameters["T_ph_indices"]
-            push!(thermostats, Thermostat(T_ph_function, phonon_indices)) # Apply T_ph profile
+            push!(thermostats, TemperatureSetting(T_ph_function, phonon_indices)) # Apply T_ph profile
             push!(subsystems, Subsystem(ConstantFriction(size(initial_positions,1), parameters["γ_phonon"]), phonon_indices)) # Apply phononic friction
         end
         if get(parameters, "2TM-T_el", true) # Default is to apply T_el in order to maintain backwards compat with previous configs. 
             T_el_function = T_function_from_file(parameters["2TM-file"], 2)
             atom_indices = get!(parameters, "T_el_indices", parameters["friction_atoms"])
-            push!(thermostats, Thermostat(T_el_function, atom_indices)) # Assign T_el profile
+            push!(thermostats, TemperatureSetting(T_el_function, atom_indices)) # Assign T_el profile
             push!(subsystems, EFT_model, atom_indices) # Apply electronic friction
         end
         remaining_atoms = symdiff(1:size(initial_positions)[2], [t.indices for t in thermostats]...)
         if remaining_atoms != [] # If any atoms aren't assigned to a thermostat, make them classical.
-            push!(thermostats, Thermostat(0.0, remaining_atoms))
+            push!(thermostats, TemperatureSetting(0.0, remaining_atoms))
         end
         complete_model = CompositeModel(subsystems...) # Build model for simulations
     end
