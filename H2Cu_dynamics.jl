@@ -545,7 +545,7 @@ function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classi
             T_el_function = T_function_from_file(parameters["2TM-file"], 2)
             atom_indices = get!(parameters, "T_el_indices", parameters["friction_atoms"])
             push!(thermostats, TemperatureSetting(T_el_function, atom_indices)) # Assign T_el profile
-            push!(subsystems, Subsystem(EFT_model), atom_indices) # Apply electronic friction
+            push!(subsystems, Subsystem(EFT_model, atom_indices)) # Apply electronic friction
         end
         remaining_atoms = symdiff(1:size(initial_positions)[2], [t.indices for t in thermostats]...)
         if remaining_atoms != [] # If any atoms aren't assigned to a thermostat, make them classical.
