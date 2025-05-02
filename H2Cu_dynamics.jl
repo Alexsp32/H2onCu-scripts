@@ -158,7 +158,21 @@ function set_potential_energy_surface(ase_structure, parameters)
         load_nov23_mace_model!(ase_structure, parameters)
     elseif method == "ace"
         load_ace_model!(ase_structure, parameters)
+    elseif method == "macemodels-mpi"
+        load_macemodels_remotemodel(ase_structure, parameters)
     end
+end
+
+"""
+    load_macemodels_remotemodel(ase_structure, parameters)
+
+Loads a RemoteModel from MACEModels for batched evaluation of MACE. You are required to launch evaluator processes yourself. 
+"""
+function load_macemodels_remotemodel(ase_structure, parameters)
+    mpiconfig = parameters["MACEModels_MPI_config"]
+    ensemble_config = parameters["ensemble_algorithm"]
+    atoms, positions, cell = NQCBase.convert_from_ase_atoms(ase_structure)
+    return MACEModels.Ensemble.RemoteModel(mpiconfig, positions)
 end
 
 """
@@ -214,10 +228,28 @@ end
 TBW
 """
 function load_nov23_mace_model!(ase_structure, parameters)
+<<<<<<< HEAD
     mace_calc = pyimport("mace.calculators")
     mace_calculator = mace_calc.MACECalculator(model_paths=haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"], device=get!(parameters, "mace_devicetype", "cpu"), default_dtype="float32")
     ase_structure.set_calculator(mace_calculator)
     return nothing
+=======
+    atoms, positions, cell = NQCBase.convert_from_ase_atoms(ase_structure)
+    model_paths = parameters["pes_model_path"]
+    if isa(model_paths, String) # Ensure model path is always a vector
+        model_paths = [model_paths]
+    end
+    model = MACEModel(
+        atoms,
+        cell,
+        model_paths;
+        device = get!(parameters, "mace_devicetype", "cpu"),
+        default_dtype = Float32,
+        mobile_atoms = get!(parameters, "mace_mobileatoms", 19:56 |> collect),
+        batch_size = get!(parameters, "mace_batchsize", 1),
+    )
+    return model
+>>>>>>> main
 end
 
 function EFT_LDFA_cube_model(ase_structure, parameters)
@@ -259,7 +291,7 @@ function EFT_LDFA_ACE(ase_structure, parameters)
         end
     end
     ase_io.write("ace_ldfa_tmp.xyz", single_H_structure)
-    julip_atoms = ACE1.read_extxyz("ace_ldfa_tmp.xyz")
+    julip_atoms = ACE1.read_extxyz("ace_ldfa_tmp.xyz")[1]
     eft_model = ACE1.read_dict(load_dict(parameters["eft_model_path"])["IP"])
     JuLIP.set_calculator!(julip_atoms, eft_model)
     density_model = AceLDFA(AdiabaticModels.JuLIPModel(julip_atoms); density_unit=u"Å^-3")
