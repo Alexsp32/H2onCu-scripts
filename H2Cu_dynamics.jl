@@ -159,7 +159,21 @@ function set_potential_energy_surface(ase_structure, parameters)
         load_nov23_mace_model!(ase_structure, parameters)
     elseif method == "ace"
         load_ace_model!(ase_structure, parameters)
+    elseif method == "macemodels-mpi"
+        load_macemodels_remotemodel(ase_structure, parameters)
     end
+end
+
+"""
+    load_macemodels_remotemodel(ase_structure, parameters)
+
+Loads a RemoteModel from MACEModels for batched evaluation of MACE. You are required to launch evaluator processes yourself. 
+"""
+function load_macemodels_remotemodel(ase_structure, parameters)
+    mpiconfig = parameters["MACEModels_MPI_config"]
+    ensemble_config = parameters["ensemble_algorithm"]
+    atoms, positions, cell = NQCBase.convert_from_ase_atoms(ase_structure)
+    return MACEModels.Ensemble.RemoteModel(mpiconfig, positions)
 end
 
 """
@@ -225,7 +239,8 @@ function load_nov23_mace_model!(ase_structure, parameters)
         model_paths;
         device = get!(parameters, "mace_devicetype", "cpu"),
         default_dtype = Float32,
-        mobile_atoms = get!(parameters, "mace_mobileatoms", 18:56 |> collect)
+        mobile_atoms = get!(parameters, "mace_mobileatoms", 19:56 |> collect),
+        batch_size = get!(parameters, "mace_batchsize", 1),
     )
     return model
 end
