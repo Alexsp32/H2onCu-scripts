@@ -228,12 +228,6 @@ end
 TBW
 """
 function load_nov23_mace_model!(ase_structure, parameters)
-<<<<<<< HEAD
-    mace_calc = pyimport("mace.calculators")
-    mace_calculator = mace_calc.MACECalculator(model_paths=haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"], device=get!(parameters, "mace_devicetype", "cpu"), default_dtype="float32")
-    ase_structure.set_calculator(mace_calculator)
-    return nothing
-=======
     atoms, positions, cell = NQCBase.convert_from_ase_atoms(ase_structure)
     model_paths = parameters["pes_model_path"]
     if isa(model_paths, String) # Ensure model path is always a vector
@@ -249,7 +243,6 @@ function load_nov23_mace_model!(ase_structure, parameters)
         batch_size = get!(parameters, "mace_batchsize", 1),
     )
     return model
->>>>>>> main
 end
 
 function EFT_LDFA_cube_model(ase_structure, parameters)
