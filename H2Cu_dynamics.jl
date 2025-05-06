@@ -28,6 +28,7 @@ using NQCModels
 using MACEModels
 using Parameters
 using ProgressMeter
+import Random
 using Unitful
 using UnitfulAtomic
 using SciMLBase
@@ -283,8 +284,10 @@ function EFT_LDFA_ACE(ase_structure, parameters)
             single_H_structure.pop(i - 1)
         end
     end
-    ase_io.write("ace_ldfa_tmp.xyz", single_H_structure)
-    julip_atoms = ACE1.read_extxyz("ace_ldfa_tmp.xyz")[1]
+    tmp_filename = Random.randstring(32)
+    ase_io.write("$(tmp_filename).xyz", single_H_structure)
+    julip_atoms = ACE1.read_extxyz("$(tmp_filename).xyz")[1]
+    rm("$(tmp_filename).xyz", force=true)
     eft_model = ACE1.read_dict(load_dict(parameters["eft_model_path"])["IP"])
     JuLIP.set_calculator!(julip_atoms, eft_model)
     density_model = AceLDFA(AdiabaticModels.JuLIPModel(julip_atoms); density_unit=u"Å^-3")
