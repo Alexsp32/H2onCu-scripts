@@ -1,5 +1,4 @@
 using PythonCall
-import ACE
 import ACE1
 import ACEpotentials
 #* using ACEds.FrictionModels can't use due to imcompatibility with ACE1
