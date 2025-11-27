@@ -1,118 +1,150 @@
+ENV["JULIA_PYTHONCALL_EXE"] = "@PyCall"
 using ArgParse
 using Distributed
 using JLD2
 using ClusterScripts
-#using PyCall
+using Unitful
+using UnitfulAtomic
+using NQCDynamics
+using DiffEqBase
+using Statistics
+
+# Global parameters (directories with a trailing slash)
+# Base directory containing structures, models and 2TM_profiles folders
+base_path = "/springbrook/share/chemistryrjm/msrkhg/H2onCu/"
+# Scripts directory (so I can include the correct H2Cu_dynamics.jl file)
+scripts_path = "$(base_path)/EnergyAccountingSimulations/scripts-ldfa/"
+# Initial conditions folder
+initial_conditions_path = base_path * "initial_conditions/"
+# Temporary file store
+output_dir = base_path * "EnergyAccountingSimulations/tmp/"
 
 function argparse()
-    s=ArgParseSettings()
+    s = ArgParseSettings()
     @add_arg_table s begin
         "--worker"
-            help="Julia processes called by parallel should use this option to indicate they need to run something."
-            arg_type=Int
-            default=0
+        help = "Julia processes called by parallel should use this option to indicate they need to run something."
+        arg_type = Int
+        default = 0
         "--params"
-            help="The location of the queue file. "
-            default="simulation_parameters.jld2"
+        help = "The location of the queue file. "
+        default = "simulation_parameters.jld2"
     end
     return parse_args(s)
 end
-args=argparse()
+args = argparse()
 # Execution block for a worker process. 
-if args["worker"]!=0
-    if !isdir("tmp")
-        mkdir("tmp")
+if args["worker"] != 0
+    if !isdir(output_dir)
+        mkdir(output_dir)
     end
-    include("H2Cu_dynamics.jl")
-    all_params=jldopen(args["params"])
-    run_params=all_params["queue"][args["worker"]][1,1]
-    run_params["jobid"]=args["worker"]
-    # Activate ACE friction if necessary (needs to be initialised in global scope)
-    if haskey(run_params, "friction_type") && run_params["friction_type"]=="ODF_ACE"
-        # Poke ACEds with a stick!
-            model_params = load_object(run_params["ODF_ACE_params"])        
-            m_cov = ac_matrixmodel(ACE.EuclideanVector(Float64),model_params["species_friction"],model_params["species_env"];n_rep=model_params["n_rep_cov"], rcut_on = model_params["cutoff"], rcut_off = model_params["cutoff"], maxorder_on=model_params["max_order_on"], maxdeg_on=model_params["max_degree_on"],
-                    species_maxorder_dict_on = model_params["species_maxorder_dict_on_cov"], 
-                    species_weight_cat_on = model_params["species_weight_cat_on_cov"],
-                    species_maxorder_dict_off = model_params["species_maxorder_dict_off_cov"], 
-                    species_weight_cat_off = model_params["species_weight_cat_off_cov"],
-                    bond_weight = model_params["bond_weight"])
-            m_equ = ac_matrixmodel(ACE.EuclideanMatrix(Float64),model_params["species_friction"],model_params["species_env"];n_rep=model_params["n_rep_equ"], rcut_on = model_params["cutoff"], rcut_off = model_params["cutoff"], maxorder_on=model_params["max_order_on"], maxdeg_on=model_params["max_degree_on"],
-                    species_maxorder_dict_on = model_params["species_maxorder_dict_on_equ"], 
-                    species_weight_cat_on = model_params["species_weight_cat_on_equ"],
-                    species_maxorder_dict_off = model_params["species_maxorder_dict_off_equ"], 
-                    species_weight_cat_off = model_params["species_weight_cat_off_equ"],
-                    bond_weight = model_params["bond_weight"])
-            # define a model
-            c_fit = load_object(run_params["ODF_ACE_cfit"])
-            eft_model_ace = FrictionModel((m_cov,m_equ))
-            ACE.set_params!(eft_model_ace, c_fit)
-            # ACE friction should now be initialised
-        end
-    kick_params=copy(run_params) # Absolutely DO NOT REMOVE copy() under any circumstances - You will bork your simulation parameters by not copying the dict. 
-    kick_params["runtime"]=kick_params["timestep"]
-    kick_params["saveat"]=kick_params["timestep"]
+    include(scripts_path * "H2Cu_dynamics.jl")
+    all_params = jldopen(args["params"])
+    run_params = all_params["queue"][args["worker"]][1, 1]
+    run_params["jobid"] = args["worker"]
+    kick_params = copy(run_params) # Absolutely DO NOT REMOVE copy() under any circumstances - You will bork your simulation parameters by not copying the dict.
+    kick_params["runtime"] = kick_params["timestep"]
+    kick_params["saveat"] = kick_params["timestep"]
     println("Running a single time step to speed things up.")
     driver(kick_params)
     println("Now running the requested simulation.")
-    results=driver(run_params)
-    jldsave("tmp/"*ENV["SLURM_JOBID"]*"_"*string(args["worker"])*".jld2"; results=results)
+    results = driver(run_params)
+    jldsave("$(output_dir)$(ENV["SLURM_JOB_ID"])_$(args["worker"]).jld2"; results=results)
     exit()
 end
 
-using NQCDynamics
-using Unitful
-using DiffEqBase
-include("../scripts/H2Cu_dynamics.jl")
 
-######### SIMULATION PARAMETER BLOCK
+include(scripts_path * "H2Cu_dynamics.jl")
+H2AverageKineticEnergy(sol, i) = mean(last(OutputSubsetKineticEnergy([55, 56])(sol, i), 50))
 
-# Set fixed parameters
-fixed_parameters=Dict(
-    "model_path" => "/Users/u5529589/Documents/H2onCu/models/LDD_initial_conditions/h2cu_mace.model", # SchNet model path
-    "starting_structure" => "/Users/u5529589/Documents/H2onCu/models/LDD_initial_conditions/h2cu111_0K.in.in",
-    "trajectories" => 2, #Trajectories for RPMD
-    "runtime" => 0.025u"ps", # Runtime for RPMD
-    "timestep" => 0.1u"fs", # Timestep 
-    "ensemble_algorithm" => EnsembleDistributed(), # Parallelisation method to use
-    "saveat" => 0.1u"fs", # Sampling time interval for RPSH
-    "gamma" => 0.375, 
-    "pes_type" => "mace",
-    #=
-    "friction_type" => "ODF_ACE",
-    "ODF_ACE_params" => "/Users/u5529589/Documents/H2onCu/models/eft/odf/aceds/wgt_x14_5/h2cu_eft_ace_ds_model_params_m.jld2",
-    "ODF_ACE_cfit" => "/Users/u5529589/Documents/H2onCu/models/eft/odf/aceds/wgt_x14_5/h2cu_eft_ace_ds_model_c_fit.jld2",
-    # "friction_type" => "ODF_SchNet",
-    # "ODF_SchNet_model_path" => "/Users/u5529589/Documents/H2onCu/models/eft/odf/schnet/i5_f128/best_model",
-    =#
-    "friction_type" => "LDFA_scikit",
-    "eft_density_pickle" => "/Users/u5529589/Documents/H2onCu/models/eft/ldfa/scikit/newest/density_soap_d2_a0_001_20230505.pkl",
-    "eft_density_scaler" => "/Users/u5529589/Documents/H2onCu/models/eft/ldfa/scikit/newest/scaler_soap_d2_a0_001_20230505.pkl",
+######### SIMULATION PARAMETER BLOCK #########
+friction_atoms = [55, 56]
+
+fixed_parameters = Dict(
     "task" => "mdef+2tm",
-    "initial_conditions_file" => "/Users/u5529589/Documents/H2onCu/initial_conditions/Cu111-110-100_3x3x6_2H_initials/Cu111_3x3x6_2H_300K_initial.jld2",
-    "T_el_profile" => "/Users/u5529589/Documents/H2onCu/2TM/T_el_300K_J60.txt",
-    "desorption_max_hydrogen_bond_distance" => 1.0,
+    "pes_type" => "mace_nov23",
+    "pes_model_path" => base_path * "wojciech-h2cu-repo/models/pes/mace_new/3_best/MACE_model_swa.model", # PES
+    "trajectories" => 672,
+    "runtime" => 4.7u"ps", # start at -0.4ps from laser maximum
+    "timestep" => 0.1u"fs", # Timestep
+    "saveat" => 0.1u"fs",
+    "ensemble_algorithm" => EnsembleSerial(), # Parallelisation method to use
     "desorption_min_surface_distance" => 8.0,
-    #"output_type" => "full_trajectory",
-    "outputs" => (OutputDynamicsVariables),# , OutputKineticEnergy, OutputPotentialEnergy, OutputHydrogenKineticEnergy([55,56])),
-    #"friction_atoms" => [55,56],
-    "Cu_toplayer_indices" => collect(54-8:54),
+    "outputs" => (
+        OutputInitial, # Starting structure
+        OutputFinal, # Final geometry: ν, J, translational, rotational, vibrational energies, effective temperatures
+        OutputFinalTime, # Time of termination (number of desorption steps yields instant desorption time)
+        OutputSubsetKineticEnergy([55,56]),
+        OutputDynamicsVariables, #! I forgot to add this initially. If the previous attempt at running the submit script worked, then this won't be included. 
+        OutputDesorptionAngle(friction_atoms), #! I forgot to add this initially. If the previous attempt at running the submit script worked, then this won't be included.
+        OutputDesorptionTrajectory(friction_atoms; surface_distance_threshold=austrip(6.0u"Å"), extra_frames=200), #! I forgot to add this initially. If the previous attempt at running the submit script worked, then this won't be included.
+        OutputNoise, #! I forgot to add this initially. If the previous attempt at running the submit script worked, then this won't be included.
+    ),
+    "friction_atoms" => friction_atoms,
+    "Cu_toplayer_indices" => collect(54-8:54), # Defines the top slab layer to measure distance from
+    "γ_phonon" => austrip(uconvert(u"ps^-1", 7.98e13u"rad/s" / 2 / π / u"rad")) * austrip(63.546u"u"), # From Debye frequency of bulk Cu - Yields ~5K T RMSE for Cu(111)
+    "2TM-T_ph" => true, # active phonon thermostat
+    "T_ph_indices" => collect(19:54), # phonon thermostat for four layers is best
+    "batchsize" => 1, # Split into 128 trajectories to be run in parallel. 
+	"run_dynamics_kwargs" => (save_noise=true,),
+	"mace_mobileatoms" => collect(19:56),
 )
 
 # Set variables
-variables=Dict(
-    "friction_atoms" => [[55,56]],
+variables = Dict(
+    "friction_model" => [
+        Dict("friction_type" => "LDFA_ACE", "eft_model_path" => base_path * "wojciech-h2cu-repo/models/eft/ldfa/ace/n3_d3_co4_4/h2cu_ace.json"),
+        Dict("friction_type" => "ODF_ACE", "eft_model_path" => base_path * "wojciech-h2cu-repo/models/eft/odf/aceds/_old/ac_model_4/eft_ac.model"),
+    ],
+    "starting_temperature" => [100],
+    "fluence" => [120],
+    "surface_facet" => ["100", "110", "111", "211"],
 )
-# Total trajectories to run: 1
+
+function postprocess_queue(input)
+    merge!(input, input["friction_model"]) # Set parameters for the correct EFT model
+    # Set the initial conditions file
+    input["initial_conditions_file"] = initial_conditions_path * "initial_Cu$(input["surface_facet"])_T-$(input["starting_temperature"])K_3x3x6_lowH.jld2"
+    # Set correct starting structure
+    input["starting_structure"] = base_path * "structures/MACE_$(input["starting_temperature"])K/$(input["surface_facet"])/Cu$(input["surface_facet"])_T-$(input["starting_temperature"])K_3x3x6_lowH_relax.in"
+    # Set the 2TM profile
+    input["2TM-file"] = base_path * "2TM_profiles/2TM1D-toponly-J$(input["fluence"])-$(input["starting_temperature"])K.csv"
+    if input["surface_facet"] == "211" # Atomic numbering is different here.
+		input["Cu_toplayer_indices"] = collect(Iterators.flatten([16:18, 34:36, 52:54])) # Top layer
+		input["T_ph_indices"] = collect(Iterators.flatten([7:18, 25:36, 43:54])) # Top four layers and H atoms (don't forget these again!)
+		input["mace_mobileatoms"] = collect(Iterators.flatten([7:18, 25:36, 43:56]))
+    end
+    return input
+end
+
+# Total trajectories to run: 2
 # Estimated time per trajectory: unknown
 
 if isfile(args["params"])
-    @warn "Simulation queue already exists and will not be regenerated. Delete "*args["params"]*" to regenerate the queue."
+    @warn "Simulation queue already exists and will not be regenerated. Delete " * args["params"] * " to regenerate the queue."
     exit()
 else
-    job_queue=build_job_queue(fixed_parameters, variables)
-    serialise_queue!(job_queue)
-    @info "Generated simulation queue at "*args["params"]
-    exit()
+    job_queue = build_job_queue(fixed_parameters, variables, postprocess_queue)
+    serialise_queue!(job_queue; filename=args["params"])
+    @info "Generated simulation queue at " * args["params"]
 end
 
+@info "Testing simulation setup:"
+try
+    queue = jldopen(args["params"])["queue"]
+    sim, atoms, positions, cell = initialise_simulation(queue[1][])
+    println("Simulation: $(sim)")
+    println("Atoms: $(atoms)")
+    println("Size of system: $(size(positions))")
+    @info "Testing potential"
+    NQCModels.potential(sim.calculator.model, positions)
+    @info "Testing derivative"
+    NQCModels.derivative(sim.calculator.model, positions)
+    @info "Testing friction"
+    NQCModels.friction(sim.calculator.model, positions)
+catch e
+    @error "Simulation could not be initialised. The parameters file will be removed. See the error message below for details:"
+    rm(args["params"]) #! Dangerous. Default value is set and glob/dir should cause error as long as if isfile(args["params"]) is called before this.
+    throw(e)
+    exit()
+end
