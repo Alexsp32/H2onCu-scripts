@@ -1,4 +1,5 @@
 ENV["JULIA_PYTHONCALL_EXE"] = "@PyCall"
+using MACEModels
 using ArgParse
 using Distributed
 using JLD2
@@ -13,7 +14,7 @@ using Statistics
 # Base directory containing structures, models and 2TM_profiles folders
 base_path = "/springbrook/share/chemistryrjm/msrkhg/H2onCu/"
 # Scripts directory (so I can include the correct H2Cu_dynamics.jl file)
-scripts_path = "$(base_path)/EnergyAccountingSimulations/scripts-ldfa/"
+scripts_path = "$(base_path)/EnergyAccountingSimulations/scripts-odf/"
 # Initial conditions folder
 initial_conditions_path = base_path * "initial_conditions/"
 # Temporary file store
@@ -45,6 +46,8 @@ if args["worker"] != 0
     kick_params = copy(run_params) # Absolutely DO NOT REMOVE copy() under any circumstances - You will bork your simulation parameters by not copying the dict.
     kick_params["runtime"] = kick_params["timestep"]
     kick_params["saveat"] = kick_params["timestep"]
+    @info "Loading ACEds"
+    eft_model_ace = ACE1.read_dict(ACE1.load_dict(run_params["eft_model_path"]))
     println("Running a single time step to speed things up.")
     driver(kick_params)
     println("Now running the requested simulation.")
@@ -68,17 +71,17 @@ fixed_parameters = Dict(
     "runtime" => 4.7u"ps", # start at -0.4ps from laser maximum
     "timestep" => 0.1u"fs", # Timestep
     "saveat" => 0.1u"fs",
-    "ensemble_algorithm" => EnsembleSerial(), # Parallelisation method to use
+    "ensemble_algorithm" => EnsembleDistributed(), # Parallelisation method to use
     "desorption_min_surface_distance" => 8.0,
     "outputs" => (
         OutputInitial, # Starting structure
         OutputFinal, # Final geometry: ν, J, translational, rotational, vibrational energies, effective temperatures
         OutputFinalTime, # Time of termination (number of desorption steps yields instant desorption time)
         OutputSubsetKineticEnergy([55,56]),
-        OutputDynamicsVariables, #! I forgot to add this initially. If the previous attempt at running the submit script worked, then this won't be included. 
-        OutputDesorptionAngle(friction_atoms), #! I forgot to add this initially. If the previous attempt at running the submit script worked, then this won't be included.
-        OutputDesorptionTrajectory(friction_atoms; surface_distance_threshold=austrip(6.0u"Å"), extra_frames=200), #! I forgot to add this initially. If the previous attempt at running the submit script worked, then this won't be included.
-        OutputNoise, #! I forgot to add this initially. If the previous attempt at running the submit script worked, then this won't be included.
+        OutputDynamicsVariables, # Full trajectory output
+        OutputDesorptionAngle(friction_atoms), # Angle of desorption if applicable
+        OutputDesorptionTrajectory(friction_atoms; surface_distance_threshold=austrip(6.0u"Å"), extra_frames=200), # Desorption trajectory for criterion evaluation, "transition state" geometry
+        OutputNoise,
     ),
     "friction_atoms" => friction_atoms,
     "Cu_toplayer_indices" => collect(54-8:54), # Defines the top slab layer to measure distance from
@@ -111,8 +114,9 @@ function postprocess_queue(input)
     input["2TM-file"] = base_path * "2TM_profiles/2TM1D-toponly-J$(input["fluence"])-$(input["starting_temperature"])K.csv"
     if input["surface_facet"] == "211" # Atomic numbering is different here.
 		input["Cu_toplayer_indices"] = collect(Iterators.flatten([16:18, 34:36, 52:54])) # Top layer
-		input["T_ph_indices"] = collect(Iterators.flatten([7:18, 25:36, 43:54])) # Top four layers and H atoms (don't forget these again!)
+        input["T_ph_indices"] = collect(Iterators.flatten([7:18, 25:36, 43:54])) # Top four layers without H atoms
 		input["mace_mobileatoms"] = collect(Iterators.flatten([7:18, 25:36, 43:56]))
+        # Outputs use max in surface normal component so no renumbering needed.
     end
     return input
 end
@@ -132,7 +136,8 @@ end
 @info "Testing simulation setup:"
 try
     queue = jldopen(args["params"])["queue"]
-    sim, atoms, positions, cell = initialise_simulation(queue[1][])
+    global eft_model_ace = read_dict(load_dict(queue[763][1,1]["eft_model_path"]))
+    sim, atoms, positions, cell = initialise_simulation(queue[763][])
     println("Simulation: $(sim)")
     println("Atoms: $(atoms)")
     println("Size of system: $(size(positions))")
