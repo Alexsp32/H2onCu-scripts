@@ -1,13 +1,10 @@
 using PythonCall
-import ACE1
 import ACEpotentials
-#* using ACEds.FrictionModels can't use due to imcompatibility with ACE1
-#* using ACEds.FrictionModels: Gamma can't use due to incompatibility with ACE1
-#* using ACEds: ac_matrixmodel can't use due to incompatibility with ACE1
+import Random
 using BSplineKit
+using CSV
 using ClusterScripts
 using Combinatorics
-using CSV
 using DataFrames
 using DataInterpolations
 using DelimitedFiles
@@ -19,19 +16,16 @@ using JLD2
 using JuLIP
 using JuLIP: set_positions!
 using LinearAlgebra
-using NNInterfaces
-using NPZ
-using NQCDynamics
-using NQCBase
-using NQCModels
 using MACEModels
+using NQCBase
+using NQCDynamics
+using NQCModels
 using Parameters
 using ProgressMeter
-import Random
-using Unitful
-using UnitfulAtomic
 using SciMLBase
 using Statistics
+using Unitful
+using UnitfulAtomic
 
 #! Driver function
 function driver(parameters)
@@ -185,7 +179,7 @@ TBW
 function load_ace_model!(ase_structure, parameters)
     model_path = haskey(parameters, "pes_model_path") ? parameters["pes_model_path"] : parameters["model_path"]
     julip_atoms = JuLIP.Atoms(ASE.ASEAtoms(ase_structure)) # Create JuLIP atoms.
-    ace_potential = ACE1.read_dict(load_dict(model_path)["IP"])
+    ace_potential = ACEpotentials.read_dict(load_dict(model_path)["IP"])
     JuLIP.set_calculator!(julip_atoms, ace_potential)
     if haskey(parameters, "fixed_atoms")
         # We have a freeze atoms constraints to apply
@@ -285,9 +279,9 @@ function EFT_LDFA_ACE(ase_structure, parameters)
     end
     tmp_filename = Random.randstring(32)
     ase_io.write("$(tmp_filename).xyz", single_H_structure)
-    julip_atoms = ACE1.read_extxyz("$(tmp_filename).xyz")[1]
+    julip_atoms = ACEpotentials.ACEbase.read_extxyz("$(tmp_filename).xyz")[1]
     rm("$(tmp_filename).xyz", force=true)
-    eft_model = ACE1.read_dict(load_dict(parameters["eft_model_path"])["IP"])
+    eft_model = ACEpotentials.read_dict(load_dict(parameters["eft_model_path"])["IP"])
     JuLIP.set_calculator!(julip_atoms, eft_model)
     density_model = AceLDFA(AdiabaticModels.JuLIPModel(julip_atoms); density_unit=u"Å^-3")
     return LDFAFriction(density_model, atoms; friction_atoms=parameters["friction_atoms"])
