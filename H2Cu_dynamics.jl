@@ -1,5 +1,6 @@
 using PythonCall
 import ACE
+import ACE1
 using ACEds.FrictionModels
 using ACEds.FrictionModels: Gamma
 import Random
@@ -292,9 +293,8 @@ end
 
 function EFT_ODF_ACE(ase_structure, parameters)
     eft_unit = u"ps^-1"
-    # convert ase atoms to julip atoms
-    ase_jl = ASE.ASEAtoms(ase_structure)
-    julip_atoms = JuLIP.Atoms(ase_jl)
+    # Skip importing JuLIP atoms from the ase structure and read directly from an input XYZ. 
+    julip_atoms = JuLIP.read_extxyz(parameters["starting_structure"]) |> first
     # create an ACEds model object
     #* eft_model_ace has to be defined in global scope in the running file because ACEds...
     eft_model = FrictionProviders.ACEdsODF(eft_model_ace, Gamma, julip_atoms; friction_unit=eft_unit)
