@@ -1,0 +1,53 @@
+[deps]
+ACEfriction = "986aa7fc-b7ff-4dfb-8e8f-cd394e358ae2"
+ACEfrictionCore = "78da5da9-a47b-43cd-ab26-de0acd0e91ff"
+ACEpotentials = "3b96b61c-0fcc-4693-95ed-1ef9f35fcc53"
+ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
+AtomsBase = "a963bdd2-2df7-4f54-a1ee-49d51e6be12a"
+AtomsCalculators = "a3e0e189-c65a-42c1-833c-339540406eb1"
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+ClusterScripts = "0afbe08e-4e50-452c-a3af-5975c91048e8"
+Combinatorics = "861a8166-3701-5b0c-9a16-15d98fcdc6aa"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+DataInterpolations = "82cc6244-b520-54b8-b5a6-8a565e85f1d0"
+DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
+Dictionaries = "85a47980-9c8c-11e8-2b9f-f7ca1fa99fb4"
+DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
+Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
+ExtXYZ = "352459e4-ddd7-4360-8937-99dcb397b478"
+FrictionProviders = "0e168e98-d76b-4d03-b07e-2b13986b2fd0"
+HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
+JuLIP = "945c410c-986d-556a-acb1-167a618e0462"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+MACEModels = "29bafc4c-4f38-420f-a153-8a5a5e0bd5f6"
+MLFlowClient = "64a0f543-368b-4a9a-827a-e71edb2a0b83"
+NQCBase = "78c76ebc-5665-4934-b512-82d81b5cbfb7"
+NQCDInterfASE = "4606675f-2246-4a0b-99d5-75b910de637b"
+NQCDistributions = "657014a1-bd25-4aa2-92cb-cbcede0310ad"
+NQCDynamics = "36248dfb-79eb-4f4d-ab9c-e29ea5f33e14"
+NQCModels = "c814dc9f-a51f-4eaf-877f-82eda4edad48"
+PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+SciMLBase = "0bca4576-84f4-4d90-8ffe-ffa030f20462"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+UnitfulAtomic = "a7773ee8-282e-5fa2-be4e-bd808c38a91a"
+WignerD = "87c4ff3e-34df-11e9-37a7-516cea4e0402"
+YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
+
+[sources]
+ACEfriction = {rev = "main", url = "https://github.com/acesuit/ACEfriction.jl.git"}
+ACEfrictionCore = {rev="json-compat", url = "https://github.com/maurergroup/acefrictioncore.jl.git"}
+ACEpotentials = {rev = "compat-prettytables", url = "https://github.com/acesuit/acepotentials.jl.git"}
+ClusterScripts = {rev = "csv-out", url = "https://github.com/NQCD/ClusterScripts.jl.git"}
+FrictionProviders = {rev = "fix-stackoverflow", url = "https://github.com/NQCD/FrictionProviders.jl.git"}
+MACEModels = {rev = "main", url = "https://github.com/nqcd/MACEModels.jl.git"}
+NQCDynamics = {rev = "main", url = "https://github.com/nqcd/NQCDynamics.jl.git"}
+WignerD = {rev = "structarrays-compat", url = "https://github.com/alexsp32/Wignerd.jl.git"}
+MLFlowClient = {rev = "main", url = "https://github.com/JuliaAI/MLFlowClient.jl.git"}
+NQCBase = {rev="extxyz-structure-consistency", url = "https://github.com/NQCD/NQCBase.jl.git"}
+NQCModels = {rev = "atomscalculators-bugfix", url="https://github.com/NQCD/NQCModels.jl.git"}
+JuLIP = {rev = "compat-interpolations", url = "https://github.com/maurergroup/JuLIP.jl.git"}
+
