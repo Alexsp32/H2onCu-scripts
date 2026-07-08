@@ -51,7 +51,7 @@ if args["worker"] != 0
     run_params["jobid"] = args["worker"]
     println("Now running the requested simulation.")
     results = DynamicsFunctions.driver(run_params)
-    jldsave("$(output_dir)/$(ENV["SLURM_JOB_ID"])_$(args["worker"]).jld2"; results=results)
+    jldsave("$(output_dir)/trj_$(args["worker"]).jld2"; results=results)
     structure = NQCDynamics.read_extxyz(run_params["starting_structure"]) |> first
     trj_filename = "$(trj_dir)/trajectory_$(args["worker"]).xyz"
     NQCDynamics.write_extxyz(
@@ -83,7 +83,7 @@ fixed_parameters = Dict(
         OutputNoise,
     ),
     #"Cu_toplayer_indices" => collect(54-8:54), # Defines the top slab layer to measure distance from
-    "γ_phonon" => austrip(uconvert(u"ps^-1", 7.98e13u"rad/s" / 2 / π / u"rad")) * austrip(63.546u"u"), # From Debye frequency of bulk Cu - Yields ~5K T RMSE for Cu(111)
+    "γ_phonon" => austrip(uconvert(u"ps^-1", 555*u"K" * 1.0u"k" / 1.0u"ħ")) * austrip(63.546u"u"), # From Debye frequency of bulk Cu - Yields ~5K T RMSE for Cu(111)
     "batchsize" => 1, # Split into 128 trajectories to be run in parallel. 
 	"run_dynamics_kwargs" => (save_noise=true,),
 	#"mace_mobileatoms" => collect(19:56),
@@ -93,7 +93,7 @@ fixed_parameters = Dict(
     "TTM-file" => "/store/all/HRu-lasers/Ru_TTM_0001_1D.hdf5",
     "TTM-T_ph" => true, # active phonon thermostat
     "TTM-T_el" => true, # active electronic thermostat
-    "T_ph_indices" => collect(162:486), # phonon thermostat for four layers is best
+    "T_ph_indices" => collect(163:486), # phonon thermostat for four layers is best
 )
 
 # Set variables
@@ -102,12 +102,12 @@ variables = Dict(
         Dict( # Combination of structure file and which atoms to apply friction to. 
             "starting_structure" => "/store/all/HRu-lasers/Ru0001_T-600K_6x6x6_lowH_relax.xyz",
             "friction_atoms" => collect(487:494),
-            "mace_mobileatoms" => collect(162:468+7), # Everything but the bottom two layers moves
+            "mace_mobileatoms" => collect(163:486+8), # Everything but the bottom two layers moves
         ),
         Dict( # Combination of structure file and which atoms to apply friction to. 
             "starting_structure" => "/store/all/HRu-lasers/Ru0001_T-600K_9x9x6_10H_relax.xyz",
             "friction_atoms" => collect(487:496),
-            "mace_mobileatoms" => collect(162:468+9), # Everything but the bottom two layers moves
+            "mace_mobileatoms" => collect(163:486+10), # Everything but the bottom two layers moves
         ),
     ],
 )
