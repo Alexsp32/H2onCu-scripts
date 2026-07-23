@@ -43,10 +43,10 @@ ACEfrictionCore = {rev="json-compat", url = "https://github.com/maurergroup/acef
 ACEpotentials = {rev = "compat-prettytables", url = "https://github.com/acesuit/acepotentials.jl.git"}
 ClusterScripts = {rev = "csv-out", url = "https://github.com/NQCD/ClusterScripts.jl.git"}
 FrictionProviders = {rev = "fix-stackoverflow", url = "https://github.com/NQCD/FrictionProviders.jl.git"}
-MACEModels = {rev = "main", url = "https://github.com/nqcd/MACEModels.jl.git"}
+MACEModels = {rev = "bugfixes", url = "https://github.com/nqcd/MACEModels.jl.git"}
 NQCBase = {rev = "v1.2.0", url = "https://github.com/nqcd/NQCBase.jl.git"}
-NQCDynamics = {rev = "main", url = "https://github.com/nqcd/NQCDynamics.jl.git"}
+NQCDynamics = {rev = "people-wont-do-prs", url = "git@github.com:maurergroup/NQCDynamics.jl.git"}
 WignerD = {rev = "structarrays-compat", url = "https://github.com/alexsp32/Wignerd.jl.git"}
-MLFlowClient = {rev = "main", url = "https://github.com/JuliaAI/MLFlowClient.jl.git"}
+# MLFlowClient = {rev = "main", url = "https://github.com/JuliaAI/MLFlowClient.jl.git"}
 NQCModels = {rev = "v1.0.5", url="https://github.com/NQCD/NQCModels.jl.git"}
 JuLIP = {rev = "compat-interpolations", url = "https://github.com/maurergroup/JuLIP.jl.git"}
