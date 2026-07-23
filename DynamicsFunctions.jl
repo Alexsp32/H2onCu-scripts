@@ -264,6 +264,7 @@ function load_mace_model!(nqcd_structure, parameters)
     mc = mace_calc.MACECalculator(
         model_path = model_paths,
         default_dtype = "float32",
+        device = get!(parameters, "mace_devicetype", "cpu"),
     )
     ase_structure.calc = mc
     model = ClassicalASEModel(ase_structure)
