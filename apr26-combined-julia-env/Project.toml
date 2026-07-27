@@ -9,6 +9,7 @@ BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 ClusterScripts = "0afbe08e-4e50-452c-a3af-5975c91048e8"
 Combinatorics = "861a8166-3701-5b0c-9a16-15d98fcdc6aa"
+CondaPkg = "992eb4ea-22a4-4c89-a5bb-47a3300528ab"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 DataInterpolations = "82cc6244-b520-54b8-b5a6-8a565e85f1d0"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
@@ -39,14 +40,14 @@ YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
 [sources]
 ACEfriction = {rev = "new-json", url = "https://github.com/maurergroup/ACEfriction.jl.git"}
-ACEfrictionCore = {rev="json-compat", url = "https://github.com/maurergroup/acefrictioncore.jl.git"}
+ACEfrictionCore = {rev = "json-compat", url = "https://github.com/maurergroup/acefrictioncore.jl.git"}
 ACEpotentials = {rev = "compat-prettytables", url = "https://github.com/acesuit/acepotentials.jl.git"}
 ClusterScripts = {rev = "csv-out", url = "https://github.com/NQCD/ClusterScripts.jl.git"}
 FrictionProviders = {rev = "fix-stackoverflow", url = "https://github.com/NQCD/FrictionProviders.jl.git"}
+JuLIP = {rev = "compat-interpolations", url = "https://github.com/maurergroup/JuLIP.jl.git"}
 MACEModels = {rev = "bugfixes", url = "https://github.com/nqcd/MACEModels.jl.git"}
 NQCBase = {rev = "v1.2.0", url = "https://github.com/nqcd/NQCBase.jl.git"}
+NQCDistributions = {rev = "one-hot-freeze", url = "https://github.com/nqcd/NQCDistributions.jl.git"}
 NQCDynamics = {rev = "people-wont-do-prs", url = "git@github.com:maurergroup/NQCDynamics.jl.git"}
+NQCModels = {rev = "v1.0.5", url = "https://github.com/NQCD/NQCModels.jl.git"}
 WignerD = {rev = "structarrays-compat", url = "https://github.com/alexsp32/Wignerd.jl.git"}
-# MLFlowClient = {rev = "main", url = "https://github.com/JuliaAI/MLFlowClient.jl.git"}
-NQCModels = {rev = "v1.0.5", url="https://github.com/NQCD/NQCModels.jl.git"}
-JuLIP = {rev = "compat-interpolations", url = "https://github.com/maurergroup/JuLIP.jl.git"}
