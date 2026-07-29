@@ -320,8 +320,8 @@ function EFT_ODF_ACE(nqcd_structure, parameters)
     model_path = haskey(parameters, "eft_model_path") ? parameters["eft_model_path"] : parameters["friction_model_path"]
     eft_model_ace = ACEfriction.read_dict(ACEfriction.load_dict(model_path))
     # `eft_model_ace` must be defined at runtime because Julia will throw a hissy fit about world ages otherwise.
-    eft_model=FrictionProviders.ACEdsODF(eft_model_ace, ACEfriction.Gamma, julip_atoms; friction_unit=eft_unit)
-    return NQCModels.FrictionModels.TensorialFriction(eft_model; friction_atoms=parameters["friction_atoms"])
+    eft_model=FrictionProviders.ACEdsODF(eft_model_ace, ACEfriction.Gamma, julip_atoms; friction_unit=eft_unit, friction_atoms=parameters["friction_atoms"])
+    return eft_model
 end
 
 #! Dynamics functions
