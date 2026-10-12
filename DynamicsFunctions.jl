@@ -312,14 +312,16 @@ function EFT_LDFA_ACE(nqcd_structure, parameters)
     return LDFAFriction(FrictionProviders.AceLDFA(ace_density, u"Å^-3"), nqcd_structure.atoms; friction_atoms=parameters["friction_atoms"])
 end
 
+global eft_model_ace = nothing
+
 function EFT_ODF_ACE(nqcd_structure, parameters)
     eft_unit = u"ps^-1"
     # convert ase atoms to julip atoms
-    julip_atoms = JuLIP.read_extxyz(parameters["starting_structure"])
+    julip_atoms = JuLIP.read_extxyz(parameters["starting_structure"]) |> first
     # create an ACEds model object
     # `eft_model_ace` must be defined at runtime because Julia will throw a hissy fit about world ages otherwise. 
-    eft_model=FrictionProviders.ACEdsODF(eft_model_ace, ACEfriction.Gamma, julip_atoms; friction_unit=eft_unit)
-    return FrictionProviders.ODFriction(eft_model; friction_atoms=parameters["friction_atoms"])
+    eft_model=FrictionProviders.ACEdsODF(eft_model_ace, ACEfriction.Gamma, julip_atoms; friction_unit=eft_unit, friction_atoms = parameters["friction_atoms"])
+    return eft_model
 end
 
 #! Dynamics functions
