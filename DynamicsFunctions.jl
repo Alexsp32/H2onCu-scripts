@@ -54,7 +54,7 @@ function cu_surface_z(config, indices)
 end
 
 """
-Terminating callback which ends a simulation when a H2 desorption was detected. 
+Terminating callback which ends a simulation when a H2 desorption was detected.
 
 """
 mutable struct StrictDesorptionTerminator
@@ -77,7 +77,7 @@ function StrictDesorptionTerminator(
 end
 
 """
-Terminating callback which ends a simulation when a H2 desorption was detected. 
+Terminating callback which ends a simulation when a H2 desorption was detected.
 
 """
 mutable struct DesorptionTerminator
@@ -153,7 +153,7 @@ SaveCallbacks(sol, i) = sol.prob.callback
 """
     create_langevin_distribution(filename::String, trajectory)
 
-Generates a `DynamicalDistribution` from a Langevin trajectory. 
+Generates a `DynamicalDistribution` from a Langevin trajectory.
 """
 function create_langevin_distribution(filename::String, trajectory)
     distribution = DynamicalDistribution(map(x -> get_velocities(x), trajectory), map(x -> NQCDynamics.get_positions(x), trajectory), size(NQCDynamics.get_positions(trajectory[1])))
@@ -163,7 +163,7 @@ end
 """
     create_langevin_distribution(filename::String, trajectories, equilibration_time::Vector)
 
-Generates a `DynamicalDistribution` from a Langevin trajectory. Only considers structures after an initial `equilibration_time`. 
+Generates a `DynamicalDistribution` from a Langevin trajectory. Only considers structures after an initial `equilibration_time`.
 """
 function create_langevin_distribution(filename::String, trajectories, equilibration_time::Vector)
     total_dynamicsvariables = []
@@ -189,7 +189,7 @@ function set_potential_energy_surface(nqcd_structure, parameters)
     end
     if method == "schnet" #keeping model_type for backward compatibility
         @error "Don't bother using SchNet, MACE is better. "
-    elseif method in ["mace_nov23", "mace"] # Edge case where I distinguished between different versions of MACE. 
+    elseif method in ["mace_nov23", "mace"] # Edge case where I distinguished between different versions of MACE.
         load_mace_model!(nqcd_structure, parameters)
     elseif method == "ace"
         load_ace_model!(nqcd_structure, parameters)
@@ -201,7 +201,7 @@ end
 """
     load_EFT_model(ase_structure, parameters)
 
-Decides which electronic friction tensor interface to use. 
+Decides which electronic friction tensor interface to use.
 """
 function load_EFT_model(ase_structure, parameters)
     # If no friction_atoms are specified, assume all hydrogens are meant to experience friction.
@@ -227,7 +227,7 @@ end
 """
     load_macemodels_remotemodel(ase_structure, parameters)
 
-Loads a RemoteModel from MACEModels for batched evaluation of MACE. You are required to launch evaluator processes yourself. 
+Loads a RemoteModel from MACEModels for batched evaluation of MACE. You are required to launch evaluator processes yourself.
 """
 function load_macemodels_remotemodel(nqcd_structure, parameters)
     mpiconfig = parameters["MACEModels_MPI_config"]
@@ -299,7 +299,7 @@ function EFT_LDFA_ACE(nqcd_structure, parameters)
     model_path = haskey(parameters, "eft_model_path") ? parameters["eft_model_path"] : parameters["friction_model_path"]
     ace_model, _ = ACEpotentials.load_model(model_path)
     H_indices = findall(nqcd_structure.atoms.types .== :H)
-    atoms_to_copy = symdiff(1:length(nqcd_structure.atoms), H_indices[2:end]) # Remove H atoms if more than one is present. 
+    atoms_to_copy = symdiff(1:length(nqcd_structure.atoms), H_indices[2:end]) # Remove H atoms if more than one is present.
     one_H_structure = NQCBase.Structure(
         NQCBase.Atoms(nqcd_structure.atoms.types[atoms_to_copy]),
         nqcd_structure.positions[:, atoms_to_copy],
@@ -499,33 +499,43 @@ function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classi
     @info "Loading PES model"
     nqcd_model = set_potential_energy_surface(nqcd_structure, parameters) # Choose the desired ML model type and attach its calculator to ase_structure
     @info "Assigning friction model if friction_atoms is set"
-    # Assign the chosen EFT model if friction_type is provided. If no friction_atoms are specified, apply to all H-atoms. 
+    # Assign the chosen EFT model if friction_type is provided. If no friction_atoms are specified, apply to all H-atoms.
     EFT_model = haskey(parameters, "friction_type") ? load_EFT_model(nqcd_structure, parameters) : nothing
-    """
-    T_function_from_file(file::String, index::Int=2)
-
-    [Henry's 2TM code](https://github.com/Snowd1n/Two-Temperature-Model---Extended-2TM) on commit 4c0e03b2d8c1e3554492d21b5e59d45ede469dfc currently generates CSVs
-    for the 1D 2TM model with the time in ps, T_el in K, T_ph in K. This function reads the CSV files and
-    returns a function that can be used to interpolate the temperature at any time.
-    """
     function T_function_from_file(file::String, index::String="Electronic")
-        TTM_file = HDF5.h5open(file, "r")
-        # Read times and convert them to au. 
-        ttm_times = TTM_file["Time Span"][:]
-        ttm_times = ttm_times .- ttm_times[1] # Set time=0 to the start of the simulation
-        ttm_times_ps = uconvert.(u"ps", ttm_times .* u"fs") .|> ustrip
-        # Take the temperature at the top of the surface
-        ttm_temperature_K = TTM_file["$(index) Temperature"]["Temperature"][:,1]
-        T_spline = BSplineInterpolation(
-            ttm_temperature_K, 
-            ttm_times_ps,
-            3, 
-            :ArcLen, 
-            :Average; 
-            extrapolation = ExtrapolationType.Linear, # Extrapolate linearly (but please don't go there)
-        ) 
-        T_function(t) = T_spline(ustrip(u"ps", t)) .* u"K" # Convert input time in ps to au, output temperature in K.
-        return T_function # The temperature spline should take a time in ps and return a temperature in K.
+        if split(file, ".")[end] in ["hdf5", "h5"] # HDF5 option – Henry's newer LightMatter.jl
+            TTM_file = HDF5.h5open(file, "r")
+            # Read times and convert them to au.
+            ttm_times = TTM_file["Time Span"][:]
+            ttm_times = ttm_times .- ttm_times[1] # Set time=0 to the start of the simulation
+            ttm_times_ps = uconvert.(u"ps", ttm_times .* u"fs") .|> ustrip
+            # Take the temperature at the top of the surface
+            ttm_temperature_K = TTM_file["$(index) Temperature"]["Temperature"][:,1]
+            T_spline = BSplineInterpolation(
+                ttm_temperature_K,
+                ttm_times_ps,
+                3,
+                :ArcLen,
+                :Average;
+                extrapolation = ExtrapolationType.Linear, # Extrapolate linearly (but please don't go there)
+            )
+            T_function(t) = T_spline(ustrip(u"ps", t)) .* u"K" # Convert input time in ps to au, output temperature in K.
+            return T_function # The temperature spline should take a time in ps and return a temperature in K.
+        elseif split(file, ".")[end] in ["csv"] # CSV option with [Henry's 2TM code](https://github.com/Snowd1n/Two-Temperature-Model---Extended-2TM) on commit 4c0e03b2d8c1e3554492d21b5e59d45ede469dfc
+            TTM_file = CSV.read(file, DataFrame)
+            ttm_times_ps = TTM_file.Time
+            T_fields = Dict("Electronic" => :T_el, "Phononic" => :T_ph)
+            ttm_temperature_K = TTM_file[!, T_fields[index]]
+            T_spline = BSplineInterpolation(
+                ttm_temperature_K,
+                ttm_times_ps,
+                3,
+                :ArcLen,
+                :Average;
+                extrapolation = ExtrapolationType.Linear, # Extrapolate linearly (but please don't go there)
+            )
+            T_function(t) = T_spline(ustrip(u"ps", t)) .* u"K" # Convert input time in ps to au, output temperature in K.
+            return T_function # The temperature spline should take a time in ps and return a temperature in K.
+        end
     end
     @info "Generating model and thermostat for simulation type"
     if !haskey(parameters, "TTM-file")
@@ -543,7 +553,7 @@ function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classi
             push!(thermostats, TemperatureSetting(T_ph_function, phonon_indices)) # Apply T_ph profile
             push!(subsystems, Subsystem(ConstantFriction(size(nqcd_structure.positions,1), parameters["γ_phonon"]), phonon_indices)) # Apply phononic friction
         end
-        if get(parameters, "TTM-T_el", true) # Default is to apply T_el in order to maintain backwards compat with previous configs. 
+        if get(parameters, "TTM-T_el", true) # Default is to apply T_el in order to maintain backwards compat with previous configs.
             T_el_function = T_function_from_file(parameters["TTM-file"], "Electronic")
             atom_indices = get!(parameters, "T_el_indices", parameters["friction_atoms"])
             push!(thermostats, TemperatureSetting(T_el_function, atom_indices)) # Assign T_el profile
@@ -558,7 +568,7 @@ function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classi
     @info "Generated PES (+Friction) model"
     # Setup simulation and termination condition.
     # Initialise NCQD Simulation
-    set_periodicity!(nqcd_structure.cell, [true, true, false]) # Ensure we are not doing PBC along the slab Z. 
+    set_periodicity!(nqcd_structure.cell, [true, true, false]) # Ensure we are not doing PBC along the slab Z.
     sim_kwargs[:cell] = nqcd_structure.cell
     sim_kwargs[:temperature] = thermostats
     simulation = Simulation{method}(
