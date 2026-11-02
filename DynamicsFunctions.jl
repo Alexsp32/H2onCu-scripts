@@ -319,7 +319,7 @@ function EFT_ODF_ACE(nqcd_structure, parameters)
     # convert ase atoms to julip atoms
     julip_atoms = JuLIP.read_extxyz(parameters["starting_structure"]) |> first
     # create an ACEds model object
-    # `eft_model_ace` must be defined at runtime because Julia will throw a hissy fit about world ages otherwise. 
+    # `eft_model_ace` must be defined at runtime because Julia will throw a hissy fit about world ages otherwise.
     eft_model=FrictionProviders.ACEdsODF(eft_model_ace, ACEfriction.Gamma, julip_atoms; friction_unit=eft_unit, friction_atoms = parameters["friction_atoms"])
     return eft_model
 end
@@ -510,7 +510,7 @@ function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classi
             ttm_times_ps = uconvert.(u"ps", ttm_times .* u"fs") .|> ustrip
             # Take the temperature at the top of the surface
             ttm_temperature_K = TTM_file["$(index) Temperature"]["Temperature"][:,1]
-            T_spline = BSplineInterpolation(
+            T_spline = BSplineInterpolation( # B-spline interpolation since we have data every 1fs = 10*dt, so we want more smoothing.
                 ttm_temperature_K,
                 ttm_times_ps,
                 3,
@@ -525,13 +525,10 @@ function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classi
             ttm_times_ps = TTM_file.Time
             T_fields = Dict("Electronic" => :T_el, "Phononic" => :T_ph)
             ttm_temperature_K = TTM_file[!, T_fields[index]]
-            T_spline = BSplineInterpolation(
+            T_spline = LinearInterpolation( # We can use linear interpolation here since the TTM files already give T values every dt
                 ttm_temperature_K,
-                ttm_times_ps,
-                3,
-                :ArcLen,
-                :Average;
-                extrapolation = ExtrapolationType.Linear, # Extrapolate linearly (but please don't go there)
+                ttm_times_ps;
+                extrapolation_right = ExtrapolationType.Linear,
             )
             T_function(t) = T_spline(ustrip(u"ps", t)) .* u"K" # Convert input time in ps to au, output temperature in K.
             return T_function # The temperature spline should take a time in ps and return a temperature in K.
