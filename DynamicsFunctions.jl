@@ -502,6 +502,7 @@ function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classi
     # Assign the chosen EFT model if friction_type is provided. If no friction_atoms are specified, apply to all H-atoms.
     EFT_model = haskey(parameters, "friction_type") ? load_EFT_model(nqcd_structure, parameters) : nothing
     function T_function_from_file(file::String, index::String="Electronic")
+        T_function(t) = 0.0
         if split(file, ".")[end] in ["hdf5", "h5"] # HDF5 option – Henry's newer LightMatter.jl
             TTM_file = HDF5.h5open(file, "r")
             # Read times and convert them to au.
@@ -519,7 +520,6 @@ function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classi
                 extrapolation = ExtrapolationType.Linear, # Extrapolate linearly (but please don't go there)
             )
             T_function(t) = T_spline(ustrip(u"ps", t)) .* u"K" # Convert input time in ps to au, output temperature in K.
-            return T_function # The temperature spline should take a time in ps and return a temperature in K.
         elseif split(file, ".")[end] in ["csv"] # CSV option with [Henry's 2TM code](https://github.com/Snowd1n/Two-Temperature-Model---Extended-2TM) on commit 4c0e03b2d8c1e3554492d21b5e59d45ede469dfc
             TTM_file = CSV.read(file, DataFrame)
             ttm_times_ps = TTM_file.Time
@@ -531,8 +531,8 @@ function initialise_simulation(parameters::Dict{String,Any}; method::Type=Classi
                 extrapolation_right = ExtrapolationType.Linear,
             )
             T_function(t) = T_spline(ustrip(u"ps", t)) .* u"K" # Convert input time in ps to au, output temperature in K.
-            return T_function # The temperature spline should take a time in ps and return a temperature in K.
         end
+        return T_function
     end
     @info "Generating model and thermostat for simulation type"
     if !haskey(parameters, "TTM-file")
